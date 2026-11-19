@@ -524,6 +524,106 @@ contract PourLedgerRegistryTest is Test {
         }
     }
 
+    function test_SupplierDeclarationDoesNotGrantProjectAcceptance() public {
+        bytes32 supplierLotHash = keccak256("supplier declared material");
+        vm.prank(outsider);
+        uint256 supplierLot = registry.registerMaterialLot(
+            projectId,
+            supplierLotHash,
+            outsider,
+            PourLedgerRegistry.MaterialType.REBAR,
+            100,
+            UNIT_KG
+        );
+        (
+            ,,
+            address declaredSupplier,,,
+            uint128 accepted,
+            uint128 assigned,,
+            PourLedgerRegistry.LotStatus status
+        ) = registry.materialLots(supplierLot);
+        assertEq(declaredSupplier, outsider);
+        assertEq(accepted, 0);
+        assertEq(assigned, 0);
+        assertEq(uint8(status), uint8(PourLedgerRegistry.LotStatus.REGISTERED));
+
+        PourLedgerRegistry.LotAcceptance memory selfApproval = _acceptance(
+            supplierLot,
+            100,
+            PourLedgerRegistry.LotStatus.ACCEPTED,
+            CONDITION_HASH,
+            outsider,
+            0,
+            block.timestamp
+        );
+        bytes memory signature = _signAcceptance(selfApproval, OUTSIDER_KEY);
+        vm.expectRevert(abi.encodeWithSelector(PourLedgerRegistry.Unauthorized.selector, outsider));
+        registry.acceptLot(selfApproval, signature);
+
+        PourLedgerRegistry.LotAssignment memory beforeApproval =
+            _assignment(supplierLot, elementId, 1, engineer, 0, block.timestamp);
+        signature = _signAssignment(beforeApproval, ENGINEER_KEY);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                PourLedgerRegistry.InvalidLotStatus.selector,
+                PourLedgerRegistry.LotStatus.REGISTERED
+            )
+        );
+        registry.assignLotToElement(beforeApproval, signature);
+        assertEq(registry.nonces(outsider), 0);
+    }
+
+    function test_MalformedSignatureCannotConsumeNonceOrChangeLot() public {
+        PourLedgerRegistry.LotAcceptance memory acceptance = _acceptance(
+            lotId,
+            100,
+            PourLedgerRegistry.LotStatus.ACCEPTED,
+            CONDITION_HASH,
+            inspector,
+            0,
+            block.timestamp
+        );
+        vm.expectRevert(abi.encodeWithSelector(ECDSA.ECDSAInvalidSignatureLength.selector, 1));
+        registry.acceptLot(acceptance, hex"01");
+        assertEq(registry.nonces(inspector), 0);
+        (,,,,, uint128 accepted,,, PourLedgerRegistry.LotStatus status) =
+            registry.materialLots(lotId);
+        assertEq(accepted, 0);
+        assertEq(uint8(status), uint8(PourLedgerRegistry.LotStatus.REGISTERED));
+        registry.acceptLot(acceptance, _signAcceptance(acceptance, INSPECTOR_KEY));
+        assertEq(registry.nonces(inspector), 1);
+    }
+
+    function test_ModifiedEvidenceDigestCannotConsumeNonce() public {
+        PourLedgerRegistry.LotAcceptance memory acceptance = _acceptance(
+            lotId,
+            100,
+            PourLedgerRegistry.LotStatus.ACCEPTED,
+            CONDITION_HASH,
+            inspector,
+            0,
+            block.timestamp
+        );
+        bytes memory signature = _signAcceptance(acceptance, INSPECTOR_KEY);
+        acceptance.conditionHash = keccak256("updated after signing");
+        vm.expectPartialRevert(PourLedgerRegistry.SignerMismatch.selector);
+        registry.acceptLot(acceptance, signature);
+        assertEq(registry.nonces(inspector), 0);
+    }
+
+    function test_SameSignerNonceIsSharedAcrossActions() public {
+        registry.setProjectRole(projectId, inspector, PourLedgerRegistry.Role.LAB, true);
+        PourLedgerRegistry.TestEvidence memory evidence =
+            _evidence(lotId, SAMPLE_HASH, RESULTS_HASH, inspector, 0, block.timestamp + 1 hours);
+        bytes memory signature = _signEvidence(evidence, INSPECTOR_KEY);
+        _accept(lotId, 100, PourLedgerRegistry.LotStatus.ACCEPTED);
+        vm.expectRevert(
+            abi.encodeWithSelector(PourLedgerRegistry.InvalidNonce.selector, inspector, 1, 0)
+        );
+        registry.attachTestEvidence(evidence, signature);
+        assertEq(registry.evidenceRecordCount(), 0);
+    }
+
     function _expectInvalidDecision(PourLedgerRegistry.LotStatus decision, uint128 quantity)
         internal
     {
