@@ -70,6 +70,7 @@ export default function PassportPage() {
           <span className="status-dot" />
           QIE Testnet · demo
         </div>
+        <a className="live-navigation" href="/live">Live registry</a>
       </nav>
 
       <section className="shell hero-grid pb-12 pt-5 lg:pb-20 lg:pt-12" id="passport">

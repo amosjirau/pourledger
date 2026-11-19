@@ -1,5 +1,67 @@
 @import "tailwindcss";
 
+.live-navigation {
+  color: #b8ef5a;
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+
+.live-shell {
+  width: min(48rem, calc(100% - 2rem));
+  margin-inline: auto;
+  padding-block: 2rem 4rem;
+  line-height: 1.6;
+}
+
+.live-shell h1 { margin-block: 1rem 0.5rem; font-size: clamp(2rem, 8vw, 3rem); font-weight: 700; }
+.live-shell h2 { font-size: 1.25rem; font-weight: 700; }
+.live-shell h3 { font-size: 1.05rem; font-weight: 700; }
+.live-shell a { color: var(--lime); text-decoration: underline; text-underline-offset: 0.2em; }
+.live-shell p { margin-block: 0.4rem; }
+.live-mono { font-family: monospace; overflow-wrap: anywhere; }
+.live-note { color: var(--mist); }
+
+.live-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-block: 1.5rem;
+  padding: clamp(1rem, 4vw, 1.5rem);
+  border: 1px solid #45594d;
+  border-radius: 0.75rem;
+  background: #10221b;
+}
+
+.live-panel form { display: grid; gap: 0.8rem; }
+.live-panel label { display: grid; gap: 0.25rem; }
+.live-panel input, .live-panel select {
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #61776a;
+  border-radius: 0.35rem;
+  background: #0a1511;
+  color: #f3f5ee;
+}
+
+.live-panel button {
+  justify-self: start;
+  min-height: 2.65rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 0.45rem;
+  color: #14201b;
+  background: var(--lime);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.live-panel button:disabled { opacity: 0.5; cursor: default; }
+.live-panel [role="alert"] { color: #ffcd79; }
+.live-panel article + article { border-top: 1px solid #45594d; padding-top: 0.9rem; }
+.live-file { margin-block: 0.25rem; color: #dce5dc; }
+.live-file small { color: var(--mist); }
+.live-result { border-top: 1px solid #45594d; padding-top: 0.75rem; }
+.live-qr { display: grid; justify-items: start; gap: 0.5rem; margin-block: 1rem; }
+
 :root {
   --night: #0a1511;
   --night-soft: #10221b;
