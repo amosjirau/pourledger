@@ -1343,3 +1343,37 @@ export const registryTypes = {
     }
   ]
 } as const;
+export const registryImage = {
+  "byteLength": 9180,
+  "normalizedHash": "0xd90be99a60c665268e7c049a4e7704f12f217453f821220efb2c6b786b0ba812",
+  "immutableRanges": [
+    {
+      "start": 5822,
+      "length": 32
+    },
+    {
+      "start": 5780,
+      "length": 32
+    },
+    {
+      "start": 5738,
+      "length": 32
+    },
+    {
+      "start": 5903,
+      "length": 32
+    },
+    {
+      "start": 5943,
+      "length": 32
+    },
+    {
+      "start": 6031,
+      "length": 32
+    },
+    {
+      "start": 6076,
+      "length": 32
+    }
+  ]
+} as const;

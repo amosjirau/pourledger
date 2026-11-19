@@ -5,6 +5,7 @@ import {
 import { address, anvilChainId, digest, integer, maxUint128, sameHex, type RegistryTarget } from "./chain.ts";
 import { registryAbi, registryTypes } from "./generated/registry.ts";
 import type { ExpectedEvent } from "./receipt.ts";
+import { registryDomain } from "./registry-image.ts";
 
 export function walletClients(provider: EIP1193Provider, target: RegistryTarget) {
   const chain = defineChain({
@@ -92,7 +93,7 @@ export async function prepareAction({
     throw new Error("This wallet does not hold the required project role.");
   }
   const deadline = latest.timestamp + 600n;
-  const domain = { name: "PourLedgerRegistry", version: "1", chainId: target.chainId, verifyingContract: registry };
+  const domain = registryDomain(target);
   const shared = { lotId, nonce, deadline };
 
   if (action === "decision") {

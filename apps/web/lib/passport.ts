@@ -3,6 +3,7 @@ import { type Coordinates, matchesTarget, sameHex } from "./chain.ts";
 import type { deployment } from "./deployment.ts";
 import { registryAbi } from "./generated/registry.ts";
 import { validateReceipt, type ExpectedEvent } from "./receipt.ts";
+import { matchesRegistryDomain, matchesRegistryImage } from "./registry-image.ts";
 
 const maxBlocks = 50_000n;
 const chunkSize = 2_000n;
@@ -23,7 +24,9 @@ async function passportReader({ target, reader, firstBlock }: Configuration) {
     reader.getBlock({ blockNumber }),
     reader.getCode({ address: target.registry, blockNumber }),
   ]);
-  if (!code || code === "0x") throw new PassportUnavailable("No registry code exists at the confirmed block.");
+  if (!matchesRegistryImage(code)) throw new PassportUnavailable("The confirmed address does not match the compiled registry.");
+  const separator = await reader.readContract({ address: target.registry, abi: registryAbi, functionName: "domainSeparatorV4", blockNumber });
+  if (!matchesRegistryDomain(separator, target)) throw new PassportUnavailable("The registry returned a different signing domain.");
 
   const events = {
     ElementCreated: getAbiItem({ abi: registryAbi, name: "ElementCreated" }),
@@ -98,7 +101,7 @@ async function passportReader({ target, reader, firstBlock }: Configuration) {
           element[0] !== projectId || lot[0] !== projectId || (lot[8] !== 2 && lot[8] !== 3) || a.usedQuantity <= 0n) {
         throw new PassportUnavailable("Assignment does not match the registry state.");
       }
-      return { ...a, hash: record.hash, unitCode: lot[7] };
+      return { ...a, hash: record.hash, unitCode: lot[7], lotStatus: lot[8] };
     }));
   }
   async function lot(lotId: bigint) {

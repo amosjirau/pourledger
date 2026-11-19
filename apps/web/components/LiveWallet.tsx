@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { BaseError, TransactionReceiptNotFoundError, type Address, type EIP1193Provider, type Hash } from "viem";
 import { prepareAction, walletClients, type ActionName } from "../lib/actions.ts";
 import { address, anvilChainId, passportPath, sameHex, type PassportKind, type RegistryTarget } from "../lib/chain.ts";
+import { registryAbi } from "../lib/generated/registry.ts";
 import { ReceiptError, validateReceipt, type ExpectedEvent } from "../lib/receipt.ts";
+import { matchesRegistryDomain, matchesRegistryImage } from "../lib/registry-image.ts";
 import { EvidenceFile } from "./EvidenceFile";
 
 type WalletChoice = { id: string; name: string; provider: EIP1193Provider };
@@ -150,6 +152,7 @@ export function LiveWallet({ target }: { target: RegistryTarget }) {
     let signed = false;
     const controller = new AbortController();
     waitForReceipt.current = controller;
+    setProgress(form ? { label: "Preparing transaction" } : { label: "Checking receipt", hash: transaction?.hash });
 
     async function checkSession() {
       const [chain, accounts] = await Promise.all([
@@ -164,9 +167,10 @@ export function LiveWallet({ target }: { target: RegistryTarget }) {
     try {
       await checkSession();
       if (form) {
-        setProgress({ label: "Preparing transaction" });
         const code = await reader.getCode({ address: target.registry });
-        if (!code || code === "0x") throw new Error("The configured registry has no code on this chain.");
+        if (!matchesRegistryImage(code)) throw new Error("The configured address does not match the compiled registry.");
+        const separator = await reader.readContract({ address: target.registry, abi: registryAbi, functionName: "domainSeparatorV4" });
+        if (!matchesRegistryDomain(separator, target)) throw new Error("The configured registry returned a different signing domain.");
         const prepared = await prepareAction({
           action, form, account, target, clients, checkSession,
           onSigned() {

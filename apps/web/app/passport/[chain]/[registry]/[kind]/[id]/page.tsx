@@ -109,6 +109,7 @@ export default async function PassportPage({ params }: { params: Promise<Record<
               <a href={passportPath({ ...coordinates, kind: "element", id: entry.elementId })}>Structural element {entry.elementId.toString()}</a>
             )}
             <p>Quantity {entry.usedQuantity.toString()}</p>
+            {record.kind === "element" && <p>{lotStatuses[entry.lotStatus]}</p>}
             <p className="live-mono">Unit digest {entry.unitCode}</p>
             <p className="live-mono">Engineer {entry.engineer}</p>
             <p className="live-mono">Transaction {entry.hash}</p>

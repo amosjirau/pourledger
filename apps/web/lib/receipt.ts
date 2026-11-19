@@ -9,8 +9,11 @@ type EventFields = Record<string, Field>;
 export type ExpectedEvent = { name: EventName; fields: EventFields; generatedId?: string };
 
 export class ReceiptError extends Error {
-  constructor(public readonly reason: "missing" | "reverted" | "mismatch", message: string) {
+  readonly reason: "missing" | "reverted" | "mismatch";
+
+  constructor(reason: ReceiptError["reason"], message: string) {
     super(message);
+    this.reason = reason;
   }
 }
 

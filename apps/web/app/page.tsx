@@ -59,7 +59,7 @@ export default function PassportPage() {
         <span>Not connected to a chain</span>
       </div>
 
-      <nav className="shell flex items-center justify-between py-6" aria-label="Primary">
+      <nav className="shell flex flex-wrap items-center justify-between gap-3 py-6" aria-label="Primary">
         <a href="#passport" className="wordmark" aria-label="PourLedger home">
           <span className="mark" aria-hidden="true">
             PL
