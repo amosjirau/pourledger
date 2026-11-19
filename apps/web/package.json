@@ -2,12 +2,15 @@
   "name": "@pourledger/web",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "abi:generate": "node scripts/generate-registry.mjs",
     "abi:check": "node scripts/generate-registry.mjs --check",
+    "test": "node --test test/*.test.ts",
+    "test:browser": "node scripts/anvil-workflow.mjs",
     "smoke:visual": "node scripts/visual-smoke.cjs",
     "typecheck": "tsc --noEmit"
   },
@@ -23,7 +26,9 @@
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
+    "jsqr": "1.4.0",
     "playwright": "1.65.1",
+    "pngjs": "7.0.0",
     "tailwindcss": "4.3.5",
     "typescript": "7.0.2"
   }
