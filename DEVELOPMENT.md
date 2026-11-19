@@ -53,6 +53,7 @@ cd /workspace/pourledger
 
 cd apps/web
 npm run abi:check
+npm run lint
 npm test
 npm run typecheck
 npm run build
@@ -62,6 +63,8 @@ npm run test:browser
 Run `npm run abi:generate` after intentionally rebuilding a changed contract. Commit the generated binding with the source change.
 
 `test:browser` starts its own loopback Anvil and production Next.js processes on temporary ports. It deploys the Foundry artifact and uses unlocked disposable Anvil accounts with an injected EIP-1193 adapter. Override `POURLEDGER_ANVIL_BIN` if Anvil is installed elsewhere. See the [Milestone 1 runbook](docs/milestone-1.md) for application settings.
+
+Use `npm run demo:local` to keep the verified loopback passport available after the browser test. Set `POURLEDGER_CAPTURE` to an absolute directory to save actual screenshots, the QR, an MP4 and local receipts. Recording uses Chromium and FFmpeg. For verified release settings use the [shipping runbook](docs/DEPLOYMENT.md) and [.env.example](apps/web/.env.example).
 
 For the original fixture visual smoke, start the web app on port 3000 and run the browser check in another shell:
 
