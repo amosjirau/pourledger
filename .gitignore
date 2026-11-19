@@ -13,6 +13,7 @@ broadcast/
 node_modules/
 .next/
 coverage/
+*.tsbuildinfo
 
 # Editor and OS files
 .DS_Store
