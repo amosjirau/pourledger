@@ -1,7 +1,7 @@
 # Foundry outputs and installed dependencies
 cache/
 out/
-lib/
+/lib/
 
 # Local secrets and deployment artifacts
 .env
