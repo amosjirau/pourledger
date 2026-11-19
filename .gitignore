@@ -1,0 +1,19 @@
+# Foundry outputs and installed dependencies
+cache/
+out/
+lib/
+
+# Local secrets and deployment artifacts
+.env
+.env.*
+!.env.example
+broadcast/
+
+# Web dependencies and builds
+node_modules/
+.next/
+coverage/
+
+# Editor and OS files
+.DS_Store
+*.swp
