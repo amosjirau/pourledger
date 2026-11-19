@@ -1,6 +1,6 @@
 # Development workflow
 
-The project is intentionally split into an on-chain registry and a synthetic UI. No wallet, RPC, or deployment step is required for milestone-zero development.
+The synthetic demonstration and live registry use separate routes. The live workflow can be exercised with disposable Anvil accounts entirely on loopback.
 
 ## Pinned toolchain
 
@@ -8,7 +8,7 @@ The project is intentionally split into an on-chain registry and a synthetic UI.
 - Solidity `0.8.24` (`solc-linux-amd64-v0.8.24+commit.e11b9ed9`)
 - OpenZeppelin Contracts `v5.0.2`
 - forge-std `v1.17.0`
-- Node.js `>=20.9` (validated with `v24.22.1`)
+- Node.js `24` for the full test workflow (validated with `v24.22.1`)
 - Next.js `16.4.6` and the exact npm dependency graph in `apps/web/package-lock.json`
 
 The Solidity binary must retain its official SHA-256 check:
@@ -48,18 +48,27 @@ The dependency install is needed only when `lib/` is absent. Do not run it over 
 cd /workspace/pourledger
 /workspace/.local/bin/forge fmt --check
 /workspace/.local/bin/forge lint --use /workspace/.local/bin/solc-0.8.24
-/workspace/.local/bin/forge test --use /workspace/.local/bin/solc-0.8.24 -vv
+/workspace/.local/bin/forge build --use /workspace/.local/bin/solc-0.8.24
+/workspace/.local/bin/forge test --use /workspace/.local/bin/solc-0.8.24 --fuzz-runs 1024 -vv
 
 cd apps/web
+npm run abi:check
+npm test
 npm run typecheck
 npm run build
+npm run test:browser
 ```
 
-For the visual smoke test, start the web app on port 3000 and run the browser check in another shell:
+Run `npm run abi:generate` after intentionally rebuilding a changed contract. Commit the generated binding with the source change.
+
+`test:browser` starts its own loopback Anvil and production Next.js processes on temporary ports. It deploys the Foundry artifact and uses unlocked disposable Anvil accounts with an injected EIP-1193 adapter. Override `POURLEDGER_ANVIL_BIN` if Anvil is installed elsewhere. See the [Milestone 1 runbook](docs/milestone-1.md) for application settings.
+
+For the original fixture visual smoke, start the web app on port 3000 and run the browser check in another shell:
 
 ```bash
 cd /workspace/pourledger/apps/web
 npm run dev -- --port 3000
+# In a second shell, from the same directory:
 npm run smoke:visual
 ```
 
@@ -67,8 +76,8 @@ npm run smoke:visual
 
 ## Safety boundary
 
-- The UI is fixture-only and must retain its synthetic/not-connected labels until receipt validation exists.
+- Keep the demo at `/` explicitly synthetic. Use `/live` and `/passport` for the configured registry.
 - Do not add private keys, seed phrases, funded-wallet automation, or secrets to the repository.
-- Do not deploy to QIE Mainnet or use a funded wallet without explicit owner approval.
+- Get explicit owner approval before deploying to QIE Testnet or Mainnet, connecting a funded wallet, or spending assets.
 - A read-only QIE Testnet `eth_chainId` check is safe; deploying even to testnet is a separate reviewed milestone.
 - Use existing checkouts in cloud tasks. Do not create a Git worktree unless the user explicitly requests one.

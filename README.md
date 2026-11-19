@@ -13,7 +13,13 @@ This repository starts from the 17 November 2026 `pourledger-qie-hackathon-plan.
 - Foundry registry contract and tests
 - Mobile-first mock passport UI with synthetic data and no live-chain claims
 
-No contract in this repository has been deployed. Do not use a funded wallet or deploy to mainnet without the repository owner's explicit approval.
+Deployment testing uses disposable local Anvil accounts. QIE deployment and funded-wallet use require the repository owner's explicit approval.
+
+## Milestone 1
+
+`/` remains the labelled synthetic demonstration. `/live` supports injected EVM wallets and the existing registry's administrative and typed-data actions. Public lot and structural-element passports verify registry receipts against a configured chain RPC. The browser workflow deploys only to an ephemeral local Anvil process.
+
+See [development checks](DEVELOPMENT.md) and the [Milestone 1 review and Testnet runbook](docs/milestone-1.md) for configuration, deployment gates, and trust limits.
 
 ## Repository layout
 
