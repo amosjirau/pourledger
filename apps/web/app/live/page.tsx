@@ -1,29 +1,66 @@
 import { LiveWallet } from "../../components/LiveWallet";
+import { ProjectWorkspace } from "../../components/ProjectWorkspace";
 import { deployment } from "../../lib/deployment.ts";
-import { anvilChainId } from "../../lib/chain.ts";
+import { integer, networks, unitLabel } from "../../lib/chain.ts";
+import { loadProjects, type ProjectsView } from "../../lib/projects.ts";
+import { PassportUnavailable } from "../../lib/passport.ts";
 
 export const dynamic = "force-dynamic";
 
-export default function LivePage() {
-  let target;
+export default async function LivePage({ searchParams }: {
+  searchParams: Promise<{ project?: string; before?: string }>;
+}) {
+  let config: ReturnType<typeof deployment>;
   try {
-    target = deployment().target;
+    config = deployment();
   } catch {
     return (
       <main className="live-shell">
-        <a href="/">Synthetic demo</a>
+        <a href="/">PourLedger · Synthetic demo</a>
         <h1>Live registry</h1>
         <p role="status">Live verification is unavailable until an operator configures a supported registry deployment and RPC.</p>
       </main>
     );
   }
+  const { target } = config;
+  const params = await searchParams;
+  let view: ProjectsView | undefined;
+  let readError: string | undefined;
+  try {
+    const project = params.project === undefined ? undefined : integer(params.project);
+    const before = params.before === undefined ? undefined : integer(params.before);
+    view = await loadProjects(config, project, before);
+  } catch (error) {
+    readError = error instanceof PassportUnavailable ? error.message : "Check the project ID or retry when the configured verification RPC is available.";
+  }
+  const context = view?.current ? {
+    project: view.current.id.toString(),
+    elements: view.records?.elements.map((element) => element.id.toString()) ?? [],
+    lots: view.records?.lots.map((lot) => ({
+      id: lot.id.toString(), status: lot.status, unit: unitLabel(lot.unit), declared: lot.declared.toString(),
+      available: (lot.accepted - lot.assigned).toString(),
+    })) ?? [],
+  } : undefined;
   return (
-    <main className="live-shell">
-      <a href="/">Synthetic demo</a>
-      <h1>Live registry</h1>
-      <p>{target.chainId === anvilChainId ? "Local Anvil" : "QIE Testnet"} · chain {target.chainId}</p>
-      <p className="live-mono">{target.registry}</p>
-      <form className="live-panel" action="/passport">
+    <main className="live-shell workspace-shell">
+      <nav className="workspace-nav" aria-label="PourLedger">
+        <a href="/">PourLedger</a>
+        <a href="/">Synthetic demo</a>
+      </nav>
+      <header className="workspace-header">
+        <div>
+          <p className="workspace-chain">{networks[target.chainId].name} · chain {target.chainId}</p>
+          <h1>Live registry</h1>
+          <p>Manage material attestations and verify the evidence behind a structural element.</p>
+        </div>
+        <div className="workspace-registry"><span>Registry address</span><code>{target.registry}</code></div>
+      </header>
+      <div className="workspace-layout">
+        <div className="workspace-read">
+          {view ? <ProjectWorkspace target={target} view={view} /> : (
+            <section className="live-panel"><h2>Projects unavailable</h2><p role="status">{readError}</p><a href="/live">Retry projects</a></section>
+          )}
+          <form className="live-panel passport-lookup" action="/passport">
         <h2>Find a public passport</h2>
         <input type="hidden" name="chain" value={target.chainId} />
         <input type="hidden" name="registry" value={target.registry} />
@@ -32,8 +69,10 @@ export default function LivePage() {
         </label>
         <label>Record ID<input name="id" required pattern="[1-9][0-9]*" inputMode="numeric" /></label>
         <button type="submit">Find passport</button>
-      </form>
-      <LiveWallet target={target} />
+          </form>
+        </div>
+        <LiveWallet target={target} context={context} />
+      </div>
     </main>
   );
 }

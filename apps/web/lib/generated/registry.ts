@@ -1345,6 +1345,7 @@ export const registryTypes = {
 } as const;
 export const registryImage = {
   "byteLength": 9180,
+  "creationHash": "0x949db7b9f98b687c21d63903f19b8faa0938bd1da4b375f58d1bb1060d2ff623",
   "normalizedHash": "0xd90be99a60c665268e7c049a4e7704f12f217453f821220efb2c6b786b0ba812",
   "immutableRanges": [
     {

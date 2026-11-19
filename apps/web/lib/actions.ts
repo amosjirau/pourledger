@@ -2,7 +2,7 @@ import {
   createPublicClient, createWalletClient, custom, defineChain, encodeFunctionData, recoverTypedDataAddress,
   type Address, type EIP1193Provider, type Hex,
 } from "viem";
-import { address, anvilChainId, digest, integer, maxUint128, sameHex, type RegistryTarget } from "./chain.ts";
+import { address, anvilChainId, digest, integer, maxUint128, networks, sameHex, type RegistryTarget } from "./chain.ts";
 import { registryAbi, registryTypes } from "./generated/registry.ts";
 import type { ExpectedEvent } from "./receipt.ts";
 import { registryDomain } from "./registry-image.ts";
@@ -10,7 +10,7 @@ import { registryDomain } from "./registry-image.ts";
 export function walletClients(provider: EIP1193Provider, target: RegistryTarget) {
   const chain = defineChain({
     id: target.chainId,
-    name: target.chainId === anvilChainId ? "Local Anvil" : "QIE Testnet",
+    name: networks[target.chainId].name,
     nativeCurrency: { name: target.chainId === anvilChainId ? "Ether" : "QIE", symbol: target.chainId === anvilChainId ? "ETH" : "QIE", decimals: 18 },
     rpcUrls: { default: { http: [] } },
   });
@@ -82,11 +82,12 @@ export async function prepareAction({
   }
 
   const lotId = id("lotId");
-  const [latest, nonce, [projectId]] = await Promise.all([
+  const [latest, nonce, lot] = await Promise.all([
     reader.getBlock({ blockTag: "latest" }),
     reader.readContract({ address: registry, abi: registryAbi, functionName: "nonces", args: [account] }),
     reader.readContract({ address: registry, abi: registryAbi, functionName: "materialLots", args: [lotId] }),
   ]);
+  const [projectId, , , , declared, accepted, assigned, , status] = lot;
   if (!projectId) throw new Error("The lot does not exist on this registry.");
   const role = action === "decision" ? 1 : action === "assign" ? 2 : 3;
   if (!await reader.readContract({ address: registry, abi: registryAbi, functionName: "hasProjectRole", args: [projectId, account, role] })) {
@@ -98,6 +99,11 @@ export async function prepareAction({
 
   if (action === "decision") {
     const message = { ...shared, acceptedQuantity: quantity(0n), decision: code("decision", 4n, 2n), conditionHash: digest(value("conditionHash")), inspector: account };
+    if (status !== 1) throw new Error("This lot already has a terminal inspector decision.");
+    const valid = message.decision === 2 ? message.acceptedQuantity === declared
+      : message.decision === 3 ? message.acceptedQuantity > 0n && message.acceptedQuantity < declared
+      : message.acceptedQuantity === 0n;
+    if (!valid) throw new Error("Use the declared quantity for full acceptance, a smaller positive quantity for partial acceptance, or zero for rejection.");
     const typedData = { domain, types: registryTypes, primaryType: "LotAcceptance", message } as const;
     await checkSession();
     const signature = await wallet.signTypedData({ account, ...typedData });
@@ -110,6 +116,12 @@ export async function prepareAction({
   }
   if (action === "assign") {
     const message = { ...shared, elementId: id("elementId"), usedQuantity: quantity(), evidenceHash: digest(value("evidenceHash")), engineer: account };
+    if (status !== 2 && status !== 3) throw new Error("An inspector must accept some quantity before assignment.");
+    const [elementProject] = await reader.readContract({
+      address: registry, abi: registryAbi, functionName: "elements", args: [message.elementId],
+    });
+    if (elementProject !== projectId) throw new Error("Select an element from the lot’s project.");
+    if (message.usedQuantity > accepted - assigned) throw new Error("The assignment exceeds the lot’s available quantity in its declared unit.");
     const typedData = { domain, types: registryTypes, primaryType: "LotAssignment", message } as const;
     await checkSession();
     const signature = await wallet.signTypedData({ account, ...typedData });
@@ -121,6 +133,9 @@ export async function prepareAction({
     };
   }
   const message = { ...shared, sampleHash: digest(value("sampleHash")), resultsHash: digest(value("resultsHash")), lab: account };
+  if (await reader.readContract({
+    address: registry, abi: registryAbi, functionName: "evidenceIdBySampleHash", args: [lotId, message.sampleHash],
+  })) throw new Error("This sample already has a designated-lab attestation.");
   const typedData = { domain, types: registryTypes, primaryType: "TestEvidence", message } as const;
   await checkSession();
   const signature = await wallet.signTypedData({ account, ...typedData });

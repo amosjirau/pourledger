@@ -1,15 +1,42 @@
-import { getAddress, isAddress, zeroAddress, zeroHash, type Address, type Hex } from "viem";
+import { getAddress, isAddress, keccak256, stringToHex, zeroAddress, zeroHash, type Address, type Hex } from "viem";
 
 export const anvilChainId = 31337;
 export const qieTestnetChainId = 1983;
+export const qieMainnetChainId = 1990;
 export const maxUint256 = (1n << 256n) - 1n;
 export const maxUint128 = (1n << 128n) - 1n;
 
 export type RegistryTarget = {
-  chainId: typeof anvilChainId | typeof qieTestnetChainId;
+  chainId: typeof anvilChainId | typeof qieTestnetChainId | typeof qieMainnetChainId;
   registry: Address;
   confirmations: number;
+  explorerOrigin?: string;
 };
+
+export const networks = {
+  [anvilChainId]: { name: "Local Anvil" },
+  [qieTestnetChainId]: { name: "QIE Testnet" },
+  [qieMainnetChainId]: { name: "QIE Mainnet" },
+} as const;
+
+export function supportedChain(value: string): RegistryTarget["chainId"] | undefined {
+  if (value === "31337") return anvilChainId;
+  if (value === "1983") return qieTestnetChainId;
+  if (value === "1990") return qieMainnetChainId;
+}
+
+export function explorerTransaction(target: Pick<RegistryTarget, "chainId" | "explorerOrigin">, hash: string) {
+  if (target.chainId === anvilChainId || !target.explorerOrigin || !/^0x[0-9a-f]{64}$/i.test(hash)) return;
+  return `${target.explorerOrigin}/tx/${hash}`;
+}
+
+export const elementTypes = ["Other", "Footing", "Column", "Beam", "Slab"] as const;
+export const materialTypes = ["Other", "Rebar", "Cement", "Coarse aggregate", "Fine aggregate", "Ready mix"] as const;
+export const unitOptions = ["kg", "t", "m3", "piece", "bag"].map((label) => ({ label, hash: keccak256(stringToHex(label)) }));
+
+export function unitLabel(hash: string) {
+  return unitOptions.find((unit) => sameHex(unit.hash, hash))?.label ?? "custom unit";
+}
 
 export function integer(value: string, max = maxUint256, minimum = 1n) {
   if (!/^(0|[1-9][0-9]{0,77})$/.test(value)) throw new Error("Enter a whole number.");
@@ -49,9 +76,10 @@ export function passportPath(target: Coordinates) {
 
 export function parseCoordinates({ chain, registry, kind, id }: Record<"chain" | "registry" | "kind" | "id", string>): Coordinates | undefined {
   if (kind !== "element" && kind !== "lot") return;
-  if (chain !== String(anvilChainId) && chain !== String(qieTestnetChainId)) return;
+  const chainId = supportedChain(chain);
+  if (!chainId) return;
   try {
-    return { chainId: chain === String(anvilChainId) ? anvilChainId : qieTestnetChainId, registry: address(registry), kind, id: integer(id) };
+    return { chainId, registry: address(registry), kind, id: integer(id) };
   } catch {
     return;
   }

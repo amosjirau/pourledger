@@ -9,8 +9,12 @@
     "start": "next start --hostname 0.0.0.0",
     "abi:generate": "node scripts/generate-registry.mjs",
     "abi:check": "node scripts/generate-registry.mjs --check",
+    "release:preflight": "node scripts/deployment-preflight.mjs",
+    "release:verification-input": "node scripts/verification-input.mjs",
+    "lint": "biome lint .",
     "test": "node --test test/*.test.ts",
     "test:browser": "node scripts/anvil-workflow.mjs",
+    "demo:local": "node scripts/anvil-workflow.mjs --serve",
     "smoke:visual": "node scripts/visual-smoke.cjs",
     "typecheck": "tsc --noEmit"
   },
@@ -22,6 +26,7 @@
     "viem": "2.58.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.6.8",
     "@tailwindcss/postcss": "4.3.5",
     "@types/node": "26.6.6",
     "@types/react": "19.3.0",

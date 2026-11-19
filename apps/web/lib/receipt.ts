@@ -41,7 +41,8 @@ export function validateReceipt({
   if (receipt.status === "reverted") throw new ReceiptError("reverted", "Transaction reverted on-chain.");
   if (receipt.status !== "success") throw new ReceiptError("mismatch", "Receipt status is unsupported.");
 
-  const event = registryAbi.find((item): item is Event => item.type === "event" && item.name === expected.name)!;
+  const event = registryAbi.find((item): item is Event => item.type === "event" && item.name === expected.name);
+  if (!event) throw new ReceiptError("mismatch", "Registry event is unknown.");
   const signature = toEventSelector(event);
   const matches = receipt.logs.flatMap((log) => {
     if (log.removed || !sameHex(log.address, target.registry) || log.topics[0] !== signature) return [];

@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { execFile, spawn } from "node:child_process";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { promisify } from "node:util";
 import { chromium } from "playwright";
 import { keccak256, stringToHex } from "viem";
 import jsQR from "jsqr";
 import { PNG } from "pngjs";
+import { startRecording } from "./demo-media.mjs";
 
 const chainId = 31337;
 const artifactUrl = new URL("../../../out/PourLedgerRegistry.sol/PourLedgerRegistry.json", import.meta.url);
@@ -15,6 +18,11 @@ const anvilPath = process.env.POURLEDGER_ANVIL_BIN || "/workspace/.local/bin/anv
 const chromiumPath = process.env.PLAYWRIGHT_CHROMIUM_PATH || "/usr/bin/chromium";
 const children = [];
 let browser;
+let stopRecording;
+const captureDir = process.env.POURLEDGER_CAPTURE ? resolve(process.env.POURLEDGER_CAPTURE) : undefined;
+const serve = process.argv.includes("--serve");
+const transactions = [];
+const stage = async (seconds) => { if (captureDir) await delay(seconds * 1000); };
 
 async function port() {
   const server = createServer();
@@ -68,11 +76,20 @@ async function run() {
   const node = start(anvilPath, ["--silent", "--host", "127.0.0.1", "--port", String(anvilPort), "--chain-id", String(chainId)]);
   await waitFor(async () => await request("eth_chainId") === "0x7a69", node);
   const [supervisor, supplier, inspector, engineer, lab] = await request("eth_accounts");
+  const preflightEnv = { ...process.env, POURLEDGER_CHAIN_ID: String(chainId), POURLEDGER_RPC_URL: rpc, POURLEDGER_DEPLOYER: supervisor };
+  const preflight = JSON.parse((await promisify(execFile)(process.execPath, ["scripts/deployment-preflight.mjs"], { env: preflightEnv })).stdout);
+  assert.equal(preflight.status, "UNSIGNED");
+  assert.equal(preflight.chainId, chainId);
+  await assert.rejects(promisify(execFile)(process.execPath, ["scripts/deployment-preflight.mjs"], {
+    env: { ...preflightEnv, POURLEDGER_RPC_URL: "http://example.invalid/" },
+  }), /Use a loopback Anvil RPC/);
   const deploymentHash = await request("eth_sendTransaction", [{ from: supervisor, data: artifact.bytecode.object, gas: "0x989680" }]);
   let deploymentReceipt;
   await waitFor(async () => (deploymentReceipt = await request("eth_getTransactionReceipt", [deploymentHash])), node);
   assert.equal(deploymentReceipt.status, "0x1");
   const registry = deploymentReceipt.contractAddress.toLowerCase();
+  assert.equal(preflight.proposedAddress.toLowerCase(), registry);
+  assert.equal(BigInt(preflight.gasEstimate), BigInt(deploymentReceipt.gasUsed));
 
   const server = start(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
     ...process.env,
@@ -85,7 +102,7 @@ async function run() {
   });
   await waitFor(async () => (await fetch(`${origin}/live`, { signal: AbortSignal.timeout(2_000) })).ok, server);
   browser = await chromium.launch({ executablePath: chromiumPath, headless: true });
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const page = await browser.newPage({ viewport: captureDir ? { width: 1240, height: 880 } : { width: 390, height: 844 } });
   page.setDefaultTimeout(15_000);
   const externalRequests = [];
   const recordRequest = (outgoing) => {
@@ -106,10 +123,11 @@ async function run() {
     const listeners = new Map();
     const wallet = {
       account: supervisor,
-      chain: "0x7bf",
+      chain: sessionStorage.getItem("anvil-correct-chain") ? "0x7a69" : "0x7bf",
       async request({ method, params }) {
         if (method === "eth_chainId") return this.chain;
         if (method === "eth_accounts" || method === "eth_requestAccounts") return this.account ? [this.account] : [];
+        if (this.rejectSign && method === "eth_signTypedData_v4") throw Object.assign(new Error("Wallet user rejected"), { code: 4001 });
         return window.anvilRequest(method, params);
       },
       on(name, fn) {
@@ -146,15 +164,29 @@ async function run() {
     }
     await form.getByRole("button", { name: label, exact: true }).click();
     await panel.getByText(outcome, { exact: true }).waitFor();
+    if (outcome === "Confirmed" || outcome === "Reverted") {
+      const tx = await panel.locator(".live-result code").textContent();
+      const receipt = await request("eth_getTransactionReceipt", [tx]);
+      assert.equal(receipt.status, outcome === "Confirmed" ? "0x1" : "0x0");
+      transactions.push({ action, result: outcome, hash: tx, block: String(BigInt(receipt.blockNumber)), gas: String(BigInt(receipt.gasUsed)) });
+    }
   };
   const path = (kind, id) => `/passport/${chainId}/${registry}/${kind}/${id}`;
 
   await page.goto(`${origin}/live`);
+  if (captureDir) {
+    await mkdir(captureDir, { recursive: true });
+    stopRecording = await startRecording(page, captureDir);
+  }
+  const workspace = page.getByRole("region", { name: "Verified project workspace" });
+  await workspace.getByText("No projects at this confirmation depth. Connect a wallet to create one.").waitFor();
+  await stage(5);
   await panel.getByText("Local Anvil test wallet", { exact: true }).waitFor({ state: "attached" });
   await panel.getByRole("button", { name: "Connect wallet" }).click();
   await panel.getByRole("alert").filter({ hasText: "Network mismatch" }).waitFor();
   assert.equal(await panel.getByLabel("Registry action").count(), 0);
   await page.evaluate(() => {
+    sessionStorage.setItem("anvil-correct-chain", "1");
     window.workflowWallet.chain = "0x7a69";
     window.workflowWallet.emit("chainChanged", "0x7a69");
   });
@@ -163,7 +195,14 @@ async function run() {
   await runAction("project", "Create project", { projectHash: hash("local project"), supervisor }, "Pending");
   hideReceipts = false;
   await panel.getByText("Confirmed", { exact: true }).waitFor();
-  assert.match(await panel.innerText(), /Record ID 1/);
+  await panel.getByText("Record ID 1").waitFor();
+  const projectHash = await panel.locator(".live-result code").textContent();
+  const projectReceipt = await request("eth_getTransactionReceipt", [projectHash]);
+  transactions.push({ action: "project", result: "Confirmed", hash: projectHash, block: String(BigInt(projectReceipt.blockNumber)), gas: String(BigInt(projectReceipt.gasUsed)) });
+  await workspace.getByRole("heading", { name: "Project 1", exact: true }).waitFor();
+  await stage(5);
+  await page.reload();
+  await panel.getByText("Wallet chain 31337").waitFor();
   lowGas = true;
   await runAction("project", "Create project", { projectHash: hash("local reverted project"), supervisor }, "Reverted");
   lowGas = false;
@@ -172,14 +211,18 @@ async function run() {
   for (const [member, role] of [[inspector, "1"], [engineer, "2"], [lab, "3"]]) {
     await runAction("role", "Manage project role", { projectId: "1", member, role, enabled: "true" });
   }
-  await runAction("element", "Create structural element", { projectId: "1", elementCodeHash: hash("B1"), elementType: "3" });
+  await workspace.getByText("Inspector · Granted").waitFor();
+  await stage(5);
+  await runAction("element", "Create structural element", { projectId: "1", elementCodeHash: hash("C3"), elementType: "2" });
   assert.equal(await panel.getByRole("link", { name: "Open public passport" }).getAttribute("href"), path("element", 1));
   await account(supplier);
-  for (const lot of ["accepted", "rejected"]) {
+  for (const lot of ["accepted", "rejected", "partial"]) {
     await runAction("register", "Register supplier lot", {
       projectId: "1", lotHash: hash(lot), supplier, materialType: "1", quantity: "100", unitCode: hash("kg"),
     });
   }
+  await workspace.getByText("100 kg declared", { exact: true }).first().waitFor();
+  await stage(5);
   const verifier = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const verifierWrites = [];
   verifier.on("request", recordRequest);
@@ -199,22 +242,34 @@ async function run() {
     if (mode === "other") await panel.getByText("Signature was produced by a different account.").waitFor();
   }
   signatureMode = "normal";
+  await page.evaluate(() => { window.workflowWallet.rejectSign = true; });
+  await runAction("decision", "Record inspector decision", acceptance, "Rejected in wallet");
+  await page.evaluate(() => { window.workflowWallet.rejectSign = false; });
   await runAction("decision", "Record inspector decision", acceptance);
+  await stage(8);
   await runAction("decision", "Record inspector decision", { ...acceptance, lotId: "2", decision: "4", quantity: "0" });
+  await runAction("decision", "Record inspector decision", { ...acceptance, lotId: "3", decision: "3", quantity: "40" });
   await account(engineer);
+  await runAction("assign", "Assign lot to element", { lotId: "1", elementId: "1", quantity: "101", evidenceHash: hash("assignment bytes") }, "Submission unverified");
+  await panel.getByText(/exceeds the lot’s available quantity/).waitFor();
   await runAction("assign", "Assign lot to element", { lotId: "1", elementId: "1", quantity: "60", evidenceHash: hash("assignment bytes") });
+  await workspace.getByText("40 kg available · 60 assigned").waitFor();
+  await stage(8);
   await account(lab);
   const labEvidence = { lotId: "1", sampleHash: hash("sample"), resultsHash: hash("results bytes") };
   await runAction("lab", "Attach designated-lab evidence", labEvidence);
-  await runAction("lab", "Attach designated-lab evidence", labEvidence, "Signed · submission unverified");
+  await runAction("lab", "Attach designated-lab evidence", labEvidence, "Submission unverified");
+  await panel.getByText("This sample already has a designated-lab attestation.").waitFor();
   await account(supervisor);
   await runAction("role", "Manage project role", { projectId: "1", member: lab, role: "3", enabled: "false" });
+  await workspace.getByText("Lab · Revoked").waitFor();
   await account(lab);
   await runAction("lab", "Attach designated-lab evidence", { ...labEvidence, sampleHash: hash("sample 2") }, "Submission unverified");
   await panel.getByText("This wallet does not hold the required project role.").waitFor();
   await page.getByRole("button", { name: "Disconnect from PourLedger" }).click();
   await panel.getByRole("button", { name: "Connect wallet" }).waitFor();
   assert.equal(await panel.getByLabel("Registry action").count(), 0);
+  if (captureDir) await page.screenshot({ path: join(captureDir, "workspace-desktop.png"), fullPage: true });
   console.log("Role grants/revocation, supplier declarations, accepted/rejected deliveries, assignment, lab evidence, invalid signatures, duplicate sample, and disconnect passed.");
 
   await verifier.goto(origin + path("lot", 1));
@@ -232,12 +287,29 @@ async function run() {
   await verifier.getByText("Digest matches the recorded bytes.").waitFor();
   await labFile.setInputFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("altered bytes") });
   await verifier.getByText("Digest mismatch. These bytes differ from the recorded evidence.").waitFor();
+  if (captureDir) await verifier.screenshot({ path: join(captureDir, "lot-mobile.png"), fullPage: true });
   await verifier.goto(origin + path("lot", 2));
   await verifier.getByText("Rejected by designated inspector", { exact: true }).waitFor();
+  await verifier.goto(origin + path("lot", 3));
+  await verifier.getByText("Partially accepted by designated inspector", { exact: true }).waitFor();
   await verifier.goto(origin + path("element", 1));
   await verifier.getByRole("heading", { name: "Structural element 1" }).waitFor();
   assert.equal(await verifier.getByRole("link", { name: "Material lot 1" }).getAttribute("href"), path("lot", 1));
   assert.equal(await verifier.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth), false);
+  if (captureDir) {
+    await verifier.screenshot({ path: join(captureDir, "passport-mobile.png"), fullPage: true });
+    await verifier.locator(".live-qr svg").screenshot({ path: join(captureDir, "local-passport-qr.png") });
+    await page.goto(origin + path("element", 1));
+    await page.getByRole("heading", { name: "Structural element 1" }).waitFor();
+    await stage(14);
+    await page.getByRole("link", { name: "Material lot 1" }).click();
+    await page.getByRole("heading", { name: "Lab attestation 1" }).waitFor();
+    await stage(10);
+    await page.getByRole("heading", { name: "Engineer-attested assignments" }).scrollIntoViewIfNeeded();
+    await stage(24);
+    await stopRecording();
+    stopRecording = undefined;
+  }
   for (const bad of [
     path("element", "01"), path("element", 999),
     path("element", 1).replace("/31337/", "/1983/"),
@@ -252,6 +324,25 @@ async function run() {
   assert.deepEqual(externalRequests, []);
   assert.deepEqual(verifierWrites, []);
   console.log("Wallet-free receipt-backed passport routes, QR coordinates, exact-byte file verification, mobile layout, and synthetic separation passed.");
+  const evidence = {
+    environment: "Ephemeral local Anvil, synthetic construction inputs, real local EVM receipts",
+    chainId, registry, deployment: { hash: deploymentHash, block: String(BigInt(deploymentReceipt.blockNumber)), gas: String(BigInt(deploymentReceipt.gasUsed)) },
+    preflight: { creationCodeKeccak256: preflight.creationCodeKeccak256, normalizedRuntimeKeccak256: preflight.normalizedRuntimeKeccak256 },
+    elementPassport: origin + path("element", 1), lotPassport: origin + path("lot", 1),
+    accounts: { supervisor, supplier, inspector, engineer, lab }, transactions,
+  };
+  if (captureDir) await writeFile(join(captureDir, "local-receipts.json"), `${JSON.stringify(evidence, null, 2)}\n`);
+  console.log(`Local registry ${registry} deployed in ${deploymentHash} (${evidence.deployment.gas} gas).`);
+  console.log(`Local passport verified at ${evidence.elementPassport}`);
+  if (serve) {
+    await browser.close();
+    browser = undefined;
+    console.log("Demo remains on loopback until SIGINT or SIGTERM.");
+    await new Promise((done) => {
+      process.once("SIGINT", done);
+      process.once("SIGTERM", done);
+    });
+  }
 }
 
 try {
@@ -261,6 +352,7 @@ try {
   for (const { output } of children) if (output.trim()) console.error(output);
   process.exitCode = 1;
 } finally {
+  await stopRecording?.();
   await browser?.close();
   for (const { child } of children.reverse()) if (child.exitCode === null) child.kill("SIGTERM");
 }

@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
 import { EvidenceFile } from "../../../../../../components/EvidenceFile";
+import { TransactionLink } from "../../../../../../components/TransactionLink";
 import {
-  anvilChainId, lotStatuses, matchesTarget, parseCoordinates, passportPath,
+  elementTypes, lotStatuses, materialTypes, matchesTarget, networks, parseCoordinates, passportPath, unitLabel,
 } from "../../../../../../lib/chain.ts";
 import { deployment } from "../../../../../../lib/deployment.ts";
 import { loadPassport, PassportUnavailable } from "../../../../../../lib/passport.ts";
@@ -22,14 +23,14 @@ function Unavailable({ reason }: { reason: string }) {
 export default async function PassportPage({ params }: { params: Promise<Record<"chain" | "registry" | "kind" | "id", string>> }) {
   const coordinates = parseCoordinates(await params);
   if (!coordinates) notFound();
-  let config;
+  let config: ReturnType<typeof deployment>;
   try {
     config = deployment();
   } catch {
     return <Unavailable reason="No supported live deployment is configured." />;
   }
   if (!matchesTarget(coordinates, config.target)) notFound();
-  let record;
+  let record: Awaited<ReturnType<typeof loadPassport>>;
   try {
     record = await loadPassport(coordinates, config);
   } catch (error) {
@@ -42,7 +43,7 @@ export default async function PassportPage({ params }: { params: Promise<Record<
     <main className="live-shell">
       <a href="/live">Live registry</a>
       <h1>{record.kind === "lot" ? "Material lot" : "Structural element"} {coordinates.id.toString()}</h1>
-      <p>{coordinates.chainId === anvilChainId ? "Local Anvil" : "QIE Testnet"} · chain {coordinates.chainId}</p>
+      <p>{networks[coordinates.chainId].name} · chain {coordinates.chainId}</p>
       <p className="live-mono">{coordinates.registry}</p>
       <p>Receipt-validated through block {record.blockNumber.toString()} · {config.target.confirmations} confirmation(s) required</p>
       <p>Project {record.projectId.toString()}</p>
@@ -56,9 +57,9 @@ export default async function PassportPage({ params }: { params: Promise<Record<
       {record.kind === "element" && (
         <section className="live-panel">
           <h2>Element registration</h2>
-          <p>Type code {record.elementType}</p>
+          <p>{elementTypes[record.elementType] ?? `Element type ${record.elementType}`}</p>
           <p className="live-mono">Element digest {record.elementCodeHash}</p>
-          <p className="live-mono">Registration transaction {record.creationHash}</p>
+          <TransactionLink target={config.target} hash={record.creationHash} label="Element registration receipt" />
         </section>
       )}
       {lot && (
@@ -66,16 +67,16 @@ export default async function PassportPage({ params }: { params: Promise<Record<
           <section className="live-panel">
             <h2>Delivery decision</h2>
             <p>{lotStatuses[lot.status]}</p>
-            <p>Declared {lot.declaredQuantity.toString()} · Accepted {lot.acceptedQuantity.toString()} · Assigned {lot.assignedQuantity.toString()}</p>
-            <p>Material code {lot.materialType}</p>
+            <p>Declared {lot.declaredQuantity.toString()} · Accepted {lot.acceptedQuantity.toString()} · Assigned {lot.assignedQuantity.toString()} · Available {(lot.acceptedQuantity - lot.assignedQuantity).toString()} {unitLabel(lot.unitCode)}</p>
+            <p>{materialTypes[lot.materialType]}</p>
             <p className="live-mono">Unit digest {lot.unitCode}</p>
             <p className="live-mono">Supplier {lot.supplier}</p>
             <p className="live-mono">Lot digest {lot.lotHash}</p>
-            <p className="live-mono">Registration transaction {lot.registrationHash}</p>
+            <TransactionLink target={config.target} hash={lot.registrationHash} label="Lot registration receipt" />
             {lot.decision && (
               <div>
                 <p className="live-mono">Inspector {lot.decision.inspector}</p>
-                <p className="live-mono">Decision transaction {lot.decision.hash}</p>
+                <TransactionLink target={config.target} hash={lot.decision.hash} label="Inspector decision receipt" />
                 <p className="live-mono">Condition digest {lot.decision.conditionHash}</p>
                 <EvidenceFile expected={lot.decision.conditionHash} />
               </div>
@@ -88,7 +89,7 @@ export default async function PassportPage({ params }: { params: Promise<Record<
               <article key={entry.testId.toString()}>
                 <h3>Lab attestation {entry.testId.toString()}</h3>
                 <p className="live-mono">Signer {entry.lab}</p>
-                <p className="live-mono">Transaction {entry.hash}</p>
+                <TransactionLink target={config.target} hash={entry.hash} label="Lab attestation receipt" />
                 <p className="live-mono">Sample digest {entry.sampleHash}</p>
                 <p className="live-mono">Results digest {entry.resultsHash}</p>
                 <EvidenceFile expected={entry.resultsHash} />
@@ -108,11 +109,11 @@ export default async function PassportPage({ params }: { params: Promise<Record<
             ) : (
               <a href={passportPath({ ...coordinates, kind: "element", id: entry.elementId })}>Structural element {entry.elementId.toString()}</a>
             )}
-            <p>Quantity {entry.usedQuantity.toString()}</p>
+            <p>Quantity {entry.usedQuantity.toString()} {unitLabel(entry.unitCode)}</p>
             {record.kind === "element" && <p>{lotStatuses[entry.lotStatus]}</p>}
             <p className="live-mono">Unit digest {entry.unitCode}</p>
             <p className="live-mono">Engineer {entry.engineer}</p>
-            <p className="live-mono">Transaction {entry.hash}</p>
+            <TransactionLink target={config.target} hash={entry.hash} label="Assignment receipt" />
             <p className="live-mono">Evidence digest {entry.evidenceHash}</p>
             <EvidenceFile expected={entry.evidenceHash} />
           </article>

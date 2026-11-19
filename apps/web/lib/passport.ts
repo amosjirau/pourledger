@@ -13,7 +13,7 @@ export class PassportUnavailable extends Error {}
 
 type Configuration = ReturnType<typeof deployment>;
 
-async function passportReader({ target, reader, firstBlock }: Configuration) {
+export async function passportReader({ target, reader, firstBlock }: Configuration) {
   const actualChainId = await reader.getChainId();
   if (actualChainId !== target.chainId) throw new PassportUnavailable("The verification RPC returned a different chain ID.");
   const head = await reader.getBlockNumber();
@@ -29,6 +29,8 @@ async function passportReader({ target, reader, firstBlock }: Configuration) {
   if (!matchesRegistryDomain(separator, target)) throw new PassportUnavailable("The registry returned a different signing domain.");
 
   const events = {
+    ProjectCreated: getAbiItem({ abi: registryAbi, name: "ProjectCreated" }),
+    ProjectRoleUpdated: getAbiItem({ abi: registryAbi, name: "ProjectRoleUpdated" }),
     ElementCreated: getAbiItem({ abi: registryAbi, name: "ElementCreated" }),
     MaterialLotRegistered: getAbiItem({ abi: registryAbi, name: "MaterialLotRegistered" }),
     LotDecisionRecorded: getAbiItem({ abi: registryAbi, name: "LotDecisionRecorded" }),
@@ -38,13 +40,14 @@ async function passportReader({ target, reader, firstBlock }: Configuration) {
   const receipts = new Map<Hash, ReturnType<typeof reader.getTransactionReceipt>>();
   const blocks = new Map<bigint, ReturnType<typeof reader.getBlock>>();
   const canonical = (number: bigint) => {
-    if (!blocks.has(number)) blocks.set(number, reader.getBlock({ blockNumber: number }));
-    return blocks.get(number)!;
+    const block = blocks.get(number) ?? reader.getBlock({ blockNumber: number });
+    blocks.set(number, block);
+    return block;
   };
 
   async function logs<T extends Log<bigint, number, false> & { args: ExpectedEvent["fields"] }>(
     name: keyof typeof events,
-    filters: { elementId: bigint } | { lotId: bigint },
+    filters: Record<string, bigint | readonly bigint[]>,
     readPage: (range: { fromBlock: bigint; toBlock: bigint }) => Promise<T[]>,
   ) {
     const results: T[] = [];
@@ -61,13 +64,15 @@ async function passportReader({ target, reader, firstBlock }: Configuration) {
       seen.add(key);
       if (log.blockNumber < firstBlock || log.blockNumber > blockNumber || log.removed ||
           !sameHex(log.address, target.registry) ||
-          !Object.entries(filters).every(([field, id]) => Object.entries(log.args).some(([key, value]) => key === field && value === id))) {
+          !Object.entries(filters).every(([field, id]) => {
+            const actual = log.args[field];
+            return typeof id === "bigint" ? actual === id : typeof actual === "bigint" && id.includes(actual);
+          })) {
         throw new PassportUnavailable("An event falls outside the requested passport coordinates.");
       }
-      if (!receipts.has(log.transactionHash)) {
-        receipts.set(log.transactionHash, reader.getTransactionReceipt({ hash: log.transactionHash }));
-      }
-      const [receipt, block] = await Promise.all([receipts.get(log.transactionHash)!, canonical(log.blockNumber)]);
+      const receiptRequest = receipts.get(log.transactionHash) ?? reader.getTransactionReceipt({ hash: log.transactionHash });
+      receipts.set(log.transactionHash, receiptRequest);
+      const [receipt, block] = await Promise.all([receiptRequest, canonical(log.blockNumber)]);
       if (receipt.blockHash !== log.blockHash || block.hash !== log.blockHash || receipt.blockNumber !== log.blockNumber) {
         throw new PassportUnavailable("An event changed block. Retry after the chain settles.");
       }
@@ -75,10 +80,20 @@ async function passportReader({ target, reader, firstBlock }: Configuration) {
         actualChainId, target, hash: log.transactionHash, receipt, logIndex: log.logIndex,
         expected: { name, fields: log.args },
       });
-      return { args: log.args as T["args"], hash: log.transactionHash };
+      return { args: log.args as T["args"], hash: log.transactionHash, block: log.blockNumber, index: log.logIndex };
     }));
   }
   const query = { address: target.registry, strict: true } as const;
+  const projectLogs = (projectId: readonly bigint[]) => logs("ProjectCreated", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.ProjectCreated, args: { projectId } }));
+  const projectRoles = (projectId: bigint) => logs("ProjectRoleUpdated", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.ProjectRoleUpdated, args: { projectId } }));
+  const projectElements = (projectId: bigint) => logs("ElementCreated", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.ElementCreated, args: { projectId } }));
+  const projectLots = (projectId: bigint) => logs("MaterialLotRegistered", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.MaterialLotRegistered, args: { projectId } }));
+  const projectDecisions = (projectId: bigint) => logs("LotDecisionRecorded", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.LotDecisionRecorded, args: { projectId } }));
   const elementLogs = (elementId: bigint) => logs("ElementCreated", { elementId }, (range) =>
     reader.getLogs({ ...query, ...range, event: events.ElementCreated, args: { elementId } }));
   function readLot(lotId: bigint) {
@@ -143,15 +158,25 @@ async function passportReader({ target, reader, firstBlock }: Configuration) {
       registrationHash: registered[0].hash, decision: decision && { ...decision, hash: decisionRecord.hash }, labEvidence,
     };
   }
-  return { blockNumber, snapshot, reader, elementLogs, readElement, assignments, lot };
+  async function verifySnapshot() {
+    const [end, chainId] = await Promise.all([reader.getBlock({ blockNumber }), reader.getChainId()]);
+    if (end.hash !== snapshot.hash || chainId !== target.chainId) {
+      throw new PassportUnavailable("The verified snapshot changed during the request. Retry after the chain settles.");
+    }
+  }
+  return { blockNumber, projectLogs, projectRoles, projectElements, projectLots, projectDecisions, elementLogs, readElement, readLot, assignments, lot, verifySnapshot };
 }
 
 export async function loadPassport(coordinates: Coordinates, config: Configuration) {
   if (!matchesTarget(coordinates, config.target)) return null;
   const context = await passportReader(config);
   const id = coordinates.id;
-  const { blockNumber, snapshot, reader } = context;
-  let record;
+  const { blockNumber } = context;
+  type Assignments = Awaited<ReturnType<typeof context.assignments>>;
+  type Lot = NonNullable<Awaited<ReturnType<typeof context.lot>>>;
+  let record: { projectId: bigint; assignments: Assignments } & (
+    { kind: "lot"; lot: Lot } | { kind: "element"; elementCodeHash: Hash; elementType: number; creationHash: Hash }
+  );
   if (coordinates.kind === "lot") {
     const lot = await context.lot(id);
     if (!lot) return null;
@@ -172,9 +197,6 @@ export async function loadPassport(coordinates: Coordinates, config: Configurati
     const assignments = await context.assignments({ elementId: id }, projectId);
     record = { kind: "element" as const, projectId, elementCodeHash, elementType, creationHash: created[0].hash, assignments };
   }
-  const [end, chainId] = await Promise.all([reader.getBlock({ blockNumber }), reader.getChainId()]);
-  if (end.hash !== snapshot.hash || chainId !== config.target.chainId) {
-    throw new PassportUnavailable("The verified snapshot changed during the request. Retry after the chain settles.");
-  }
+  await context.verifySnapshot();
   return { blockNumber, ...record };
 }

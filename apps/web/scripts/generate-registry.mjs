@@ -3,7 +3,7 @@ import { keccak256, size } from "viem";
 
 const artifact = new URL("../../../out/PourLedgerRegistry.sol/PourLedgerRegistry.json", import.meta.url);
 const output = new URL("../lib/generated/registry.ts", import.meta.url);
-const { abi, deployedBytecode } = JSON.parse(await readFile(artifact, "utf8"));
+const { abi, bytecode, deployedBytecode } = JSON.parse(await readFile(artifact, "utf8"));
 const runtimeBytes = size(deployedBytecode.object);
 const immutableRanges = Object.values(deployedBytecode.immutableReferences).flat();
 if (Object.keys(deployedBytecode.linkReferences).length) throw new Error("Linked runtime bytecode is unsupported.");
@@ -32,7 +32,8 @@ const source = [
   "export const registryAbi = " + JSON.stringify(abi, null, 2) + " as const;",
   "export const registryTypes = " + JSON.stringify(types, null, 2) + " as const;",
   "export const registryImage = " + JSON.stringify({
-    byteLength: runtimeBytes, normalizedHash: keccak256(deployedBytecode.object), immutableRanges,
+    byteLength: runtimeBytes, creationHash: keccak256(bytecode.object),
+    normalizedHash: keccak256(deployedBytecode.object), immutableRanges,
   }, null, 2) + " as const;",
   "",
 ].join("\n");

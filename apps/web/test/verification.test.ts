@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { bytesToHex, encodeAbiParameters, encodeEventTopics, hexToBytes, type Hex, type Log, type TransactionReceipt } from "viem";
-import { matchesTarget, parseCoordinates, passportPath, type RegistryTarget } from "../lib/chain.ts";
+import { explorerTransaction, matchesTarget, parseCoordinates, passportPath, type RegistryTarget } from "../lib/chain.ts";
 import { hashEvidence, verifyEvidence } from "../lib/evidence.ts";
 import { registryAbi, registryImage } from "../lib/generated/registry.ts";
 import { ReceiptError, validateReceipt } from "../lib/receipt.ts";
@@ -61,9 +61,17 @@ test("passport coordinates round trip and reject invalid or mismatched values", 
   assert.equal(passportPath(parsed), `/passport/31337/${registry}/element/5`);
   assert.equal(matchesTarget(parsed, { ...target, chainId: 1983 }), false);
   assert.equal(matchesTarget(parsed, { ...target, registry: inspector }), false);
-  for (const bad of [{ id: "0" }, { id: "05" }, { id: "9".repeat(78) }, { id: "1e2" }, { chain: "1990" }, { kind: "project" }, { registry: "0x0000" }]) {
+  for (const bad of [{ id: "0" }, { id: "05" }, { id: "9".repeat(78) }, { id: "1e2" }, { chain: "01990" }, { kind: "project" }, { registry: "0x0000" }]) {
     assert.equal(parseCoordinates({ ...params, ...bad }), undefined);
   }
+});
+
+test("explorer URLs bind to the configured QIE chain and a complete hash", () => {
+  assert.equal(explorerTransaction({ chainId: 31337, explorerOrigin: "https://local.example" }, transactionHash), undefined);
+  assert.equal(explorerTransaction({ chainId: 1983 }, transactionHash), undefined);
+  assert.equal(explorerTransaction({ chainId: 1983, explorerOrigin: "https://testnet.qie.digital" }, transactionHash), `https://testnet.qie.digital/tx/${transactionHash}`);
+  assert.equal(explorerTransaction({ chainId: 1990, explorerOrigin: "https://mainnet.qie.digital" }, transactionHash), `https://mainnet.qie.digital/tx/${transactionHash}`);
+  assert.equal(explorerTransaction({ chainId: 1990, explorerOrigin: "https://mainnet.qie.digital" }, "/arbitrary"), undefined);
 });
 
 test("browser evidence verification compares exact bytes and enforces the size bound", async () => {

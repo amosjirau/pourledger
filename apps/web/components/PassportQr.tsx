@@ -6,7 +6,7 @@ const demoPayload = "pourledger-demo:v0:qie-testnet:undeployed:element:1";
 
 export function PassportQr() {
   return (
-    <div className="qr-frame" aria-label="Demo QR code for synthetic element B1">
+    <div className="qr-frame" role="img" aria-label="Demo QR code for synthetic element B1">
       <QRCodeSVG
         value={demoPayload}
         size={156}
