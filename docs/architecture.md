@@ -98,7 +98,7 @@ Including the signer in typed data prevents a caller from selecting a different 
 
 ## Quantity and gas bounds
 
-Every lot has exactly one `bytes32 unitCode`; no on-chain unit conversion exists. Quantities are positive `uint128` integers. Assignment validation and storage are O(1). Enumeration happens via indexed events, so adding an assignment never loops over prior assignments. Tests include cumulative over-allocation and a gas ceiling for an assignment after many previous assignments.
+Every lot has exactly one `bytes32 unitCode`; no on-chain unit conversion exists. Quantities are positive `uint128` integers. Assignment validation and storage are O(1). Enumeration happens via indexed events, so adding an assignment never loops over prior assignments. Tests include cumulative over-allocation and a 200,000-gas ceiling for an assignment after many previous assignments.
 
 ## Deferred decisions
 

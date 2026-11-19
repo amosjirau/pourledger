@@ -176,7 +176,7 @@ contract PourLedgerRegistry is EIP712 {
     uint256 public elementCount;
     uint256 public lotCount;
     uint256 public assignmentCount;
-    uint256 public testCount;
+    uint256 public evidenceRecordCount;
 
     mapping(uint256 projectId => Project project) public projects;
     mapping(
@@ -188,9 +188,9 @@ contract PourLedgerRegistry is EIP712 {
     mapping(uint256 lotId => MaterialLot lot) public materialLots;
     mapping(uint256 projectId => mapping(bytes32 lotHash => uint256 lotId)) public lotIdByHash;
     mapping(uint256 assignmentId => AssignmentRecord assignment) public assignments;
-    mapping(uint256 testId => TestRecord testRecord) public testRecords;
+    mapping(uint256 testId => TestRecord testRecord) public labEvidenceRecords;
     mapping(uint256 lotId => mapping(bytes32 sampleHash => uint256 testId)) public
-        testIdBySampleHash;
+        evidenceIdBySampleHash;
     mapping(address signer => uint256 nonce) public nonces;
 
     constructor() EIP712("PourLedgerRegistry", "1") { }
@@ -394,7 +394,7 @@ contract PourLedgerRegistry is EIP712 {
         if (evidence.sampleHash == bytes32(0) || evidence.resultsHash == bytes32(0)) {
             revert InvalidField();
         }
-        if (testIdBySampleHash[evidence.lotId][evidence.sampleHash] != 0) {
+        if (evidenceIdBySampleHash[evidence.lotId][evidence.sampleHash] != 0) {
             revert DuplicateHash(evidence.sampleHash);
         }
 
@@ -419,14 +419,14 @@ contract PourLedgerRegistry is EIP712 {
             signature
         );
 
-        testId = ++testCount;
-        testRecords[testId] = TestRecord({
+        testId = ++evidenceRecordCount;
+        labEvidenceRecords[testId] = TestRecord({
             lotId: evidence.lotId,
             sampleHash: evidence.sampleHash,
             resultsHash: evidence.resultsHash,
             lab: evidence.lab
         });
-        testIdBySampleHash[evidence.lotId][evidence.sampleHash] = testId;
+        evidenceIdBySampleHash[evidence.lotId][evidence.sampleHash] = testId;
         emit TestEvidenceAttached(
             testId, evidence.lotId, evidence.sampleHash, evidence.resultsHash, evidence.lab
         );
