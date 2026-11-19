@@ -19,6 +19,14 @@ fb03a29a517452b9f12bcf459ef37d0a543765bb3bbc911e70a87d6a37c30d5f
 
 The checksum comes from the matching build in the official `ethereum/solc-bin` `linux-amd64/list.json`. Do not disable checksum, TLS, or package signature verification.
 
+The official Foundry `v1.10.0` Linux AMD64 archive SHA-256 is:
+
+```text
+90729233bd9a683b872783ae2e3217fb56876fa2a3c37185f13e39dca8525041
+```
+
+Verify it against the release's `foundry_v1.10.0_linux_amd64.sha256` asset before extraction.
+
 ## Install
 
 With `forge` and `solc-0.8.24` available under `/workspace/.local/bin`:
