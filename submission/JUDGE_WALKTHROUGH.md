@@ -1,5 +1,9 @@
 # Judge walkthrough
 
+## Verify the Mainnet target
+
+Open the workspace, check QIE Mainnet chain `1990` and registry `0xf99C353f1B73aA2DeCa2cb7bbe580eEAa6472e63`, then compare the creation receipt in the explorer. The workspace supports wallet-free project and passport reads. Use a confirmed lot or element ID cleared for demonstration to find its public passport. The release review did not obtain an independently verified Mainnet sample ID. [Live workspace](https://pourledger-one.vercel.app/live) · [Creation receipt](https://mainnet.qie.digital/tx/0x86f4ed6cf808c6373a742dd9589c369ac5469f2b94759bbb1e770fa59599da23)
+
 ## Reproduce local evidence
 
 From the repository root:
@@ -12,7 +16,7 @@ npm run build
 npm run demo:local
 ```
 
-The command starts a loopback Anvil chain and the production server, runs the browser with the project-scoped local accounts, then prints the working passport URL. The services stay available while that process is running. It discards both services on normal exit. No wallet extension or external network is needed for the read-only local passport. Actual QIE wallet-extension rehearsal is pending.
+The command starts a loopback Anvil fixture and the production server, runs the browser with project-scoped test accounts, then prints the working passport URL. The services stay available while that process is running. Both services shut down on exit. The screenshots and their receipt hashes are from a completed run. [Local captures](media/finalization/README.md)
 
 1. Open `/live`. Confirm local chain 31337, registry address, Project 1 supervisor and the verified role history. The local fixture uses five separate test accounts. The lab role was revoked after recording one local attestation.
 2. Check the three lots for accepted, rejected and partially accepted states. Lot 1 was accepted for 100 kg with 60 kg assigned. Lot 3 was partially accepted for 40 kg. Supplier registration alone records zero accepted quantity.

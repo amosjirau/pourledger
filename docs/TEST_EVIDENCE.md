@@ -1,4 +1,6 @@
-# Shipping sprint test evidence
+# Shipping sprint test evidence archive
+
+The [finalization evidence](FINAL-RELEASE.md) and [latest browser captures](../submission/media/finalization/README.md) cover the Mainnet release review.
 
 Run on 19 November 2026 on the existing PourLedger checkout. The sprint application changes are in `1e80c13`. Solidity application source is identical to `581a81c`.
 

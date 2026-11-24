@@ -17,13 +17,13 @@ Deployment testing uses disposable local Anvil accounts. QIE deployment and fund
 
 ## Milestone 1
 
-`/` remains the labelled synthetic demonstration. `/live` supports injected EVM wallets and the existing registry's administrative and typed-data actions. Public lot and structural-element passports verify registry receipts against a configured chain RPC. The browser workflow deploys only to an ephemeral local Anvil process.
+`/` remains the labelled synthetic demonstration. `/live` supports injected EVM wallets and the existing registry's administrative and typed-data actions. Public lot and structural-element passports verify registry receipts against a configured chain RPC. The browser workflow uses an ephemeral local Anvil fixture with synthetic construction inputs.
 
 See [development checks](DEVELOPMENT.md) and the [Milestone 1 review and Testnet runbook](docs/milestone-1.md) for configuration, deployment gates, and trust limits.
 
-## Shipping sprint
+## QIE Mainnet release
 
-**Local MVP complete.** QIE Testnet and Mainnet deployments, public HTTPS hosting, and GitHub publication are pending. [Sprint status](docs/SHIP_STATUS.md) · [Test evidence](docs/TEST_EVIDENCE.md) · [Submission kit](submission/SUBMISSION.md)
+The operator supplied the QIE Mainnet registry at `0xf99C353f1B73aA2DeCa2cb7bbe580eEAa6472e63` on chain 1990. The production URL was supplied by the operator. The current release review passed on Anvil and independent public smoke checks were blocked by the Cloud proxy. [Live workspace](https://pourledger-one.vercel.app/live) · [Release handoff](docs/FINAL-RELEASE.md) · [Submission kit](submission/SUBMISSION.md)
 
 For a reproducible local run, compile the contract, install the web lockfile, build the app, and run the demo:
 
@@ -35,7 +35,7 @@ npm run build
 npm run demo:local
 ```
 
-The demo prints the verified passport URL after the production-browser Anvil workflow. Keep the process running while using that loopback URL. A real wallet can be connected through the EIP-6963 or injected EIP-1193 provider selection at `/live` after the app is configured for the intended deployment. `/` remains a separately labelled synthetic demonstration.
+The demo prints the verified passport URL after the production-browser Anvil workflow. Keep the process running while using that loopback URL. At `/live`, an EIP-6963 or injected EIP-1193 wallet can connect to the configured deployment.
 
 The single registry exposes `createProject`, `setProjectRole`, `createElement`, `registerMaterialLot`, `acceptLot`, `assignLotToElement` and `attachTestEvidence`. The project workspace verifies event receipts and state at a configured confirmation depth. The signer submits a transaction after the typed-data and simulation checks. Passports link receipt-backed events and verify evidence digests in-browser. Read-only RPC access, QIE-specific thresholds, and current explorer origins require review before launch. [Deployment procedure](docs/DEPLOYMENT.md) · [Security review](docs/SECURITY_REVIEW.md)
 

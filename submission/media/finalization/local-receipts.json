@@ -1,0 +1,127 @@
+{
+  "environment": "Ephemeral local Anvil, synthetic construction inputs, real local EVM receipts",
+  "chainId": 31337,
+  "registry": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "deployment": null,
+  "fixtureRuntimeHash": "0xc34a0e46d446500aba167d73d83eaf29945db963ebf6eed9793d8b65ff8edcfa",
+  "preflight": {
+    "creationCodeKeccak256": "0x949db7b9f98b687c21d63903f19b8faa0938bd1da4b375f58d1bb1060d2ff623",
+    "normalizedRuntimeKeccak256": "0xd90be99a60c665268e7c049a4e7704f12f217453f821220efb2c6b786b0ba812"
+  },
+  "elementPassport": "http://127.0.0.1:38175/passport/31337/0x5fbdb2315678afecb367f032d93f642f64180aa3/element/1",
+  "lotPassport": "http://127.0.0.1:38175/passport/31337/0x5fbdb2315678afecb367f032d93f642f64180aa3/lot/1",
+  "accounts": {
+    "supervisor": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+    "supplier": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "inspector": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "engineer": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+    "lab": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"
+  },
+  "transactions": [
+    {
+      "action": "project",
+      "result": "Confirmed",
+      "hash": "0xe8c31d0f14574e806b2d3c3c2707500066252d48eafe0a223541007efcf0e9a6",
+      "block": "1",
+      "gas": "91278"
+    },
+    {
+      "action": "project",
+      "result": "Reverted",
+      "hash": "0x8a84fcb2112b24c3d0debbe93be3e00a367a904a899cee61915a988c09ad1a03",
+      "block": "2",
+      "gas": "24576"
+    },
+    {
+      "action": "role",
+      "result": "Confirmed",
+      "hash": "0x1668fa97ad1ec3bd7575bcd498de27351361867bc7492f2f80c8b73b5f97aa5a",
+      "block": "3",
+      "gas": "49566"
+    },
+    {
+      "action": "role",
+      "result": "Confirmed",
+      "hash": "0x592f4692beb62d66015640ef3689eae7003c8a762f83e8886153683d0a56b722",
+      "block": "4",
+      "gas": "49578"
+    },
+    {
+      "action": "role",
+      "result": "Confirmed",
+      "hash": "0x49e2a0331ed37c252a2a24e5b8608ea10f0c426dcda54297872840a4a5fc6f80",
+      "block": "5",
+      "gas": "49578"
+    },
+    {
+      "action": "element",
+      "result": "Confirmed",
+      "hash": "0x79c12dc642c725c71961ff1870a14e9f89fb8b0c998f74cb546adea0c56c730c",
+      "block": "6",
+      "gas": "138304"
+    },
+    {
+      "action": "register",
+      "result": "Confirmed",
+      "hash": "0x8a5d4923968878bbd43bc9402e482da461a916f8d5f836d236fe35e4afbc67a7",
+      "block": "7",
+      "gas": "209631"
+    },
+    {
+      "action": "register",
+      "result": "Confirmed",
+      "hash": "0xa3e4390910e4dbb513c491cfdea1a37ba0bfe5aaf6efc8f1524f15f130f71a52",
+      "block": "8",
+      "gas": "192531"
+    },
+    {
+      "action": "register",
+      "result": "Confirmed",
+      "hash": "0xb71d73cced469962304f0dbbca93a927720e68ed381177a23cf844835299df3f",
+      "block": "9",
+      "gas": "192531"
+    },
+    {
+      "action": "decision",
+      "result": "Confirmed",
+      "hash": "0xf76dd78eb838b082aeefccb78234e31dd10afd5bc2caf34331dcb3687723333e",
+      "block": "10",
+      "gas": "72102"
+    },
+    {
+      "action": "decision",
+      "result": "Confirmed",
+      "hash": "0xc330e09ba7c6dee41996ec3582f3b3c4fd543ce59db0e572c6c7674bdc9f9371",
+      "block": "11",
+      "gas": "52313"
+    },
+    {
+      "action": "decision",
+      "result": "Confirmed",
+      "hash": "0xc4c61d4749d8524f1f904b6552b6ba99bb75c1a95b58f147aeaa87dd2778a897",
+      "block": "12",
+      "gas": "55119"
+    },
+    {
+      "action": "assign",
+      "result": "Confirmed",
+      "hash": "0xcf5e593936b88b47e94019fda2a158d206aaac04b054c30a0e071966bc8fbb67",
+      "block": "13",
+      "gas": "223606"
+    },
+    {
+      "action": "lab",
+      "result": "Confirmed",
+      "hash": "0xf2161187745f710c5aaf091b7b8b4ca26d3da75b76a815adde82eabc6f2fc5a1",
+      "block": "14",
+      "gas": "193616"
+    },
+    {
+      "action": "role",
+      "result": "Confirmed",
+      "hash": "0x1e36ca83e4c25a1fc32ad61e3efa1b47581db38c43c9b972fe450031b85f57b1",
+      "block": "15",
+      "gas": "27666"
+    }
+  ]
+}

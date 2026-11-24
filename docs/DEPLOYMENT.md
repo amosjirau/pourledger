@@ -1,6 +1,6 @@
-# Reviewed release procedure
+# Original deployment rehearsal
 
-Status on 19 November 2026: **MAINNET PENDING · TESTNET PENDING · PUBLIC HOSTING PENDING**. Local Anvil is the verified release rehearsal.
+This runbook records the pre-Mainnet rehearsal from 19 November 2026. The operator has since supplied the existing Mainnet deployment. The [current release handoff](FINAL-RELEASE.md) has the pinned registry and read-only checks for its web release. The creation steps below are historical.
 
 ## Pin the source and runtime
 

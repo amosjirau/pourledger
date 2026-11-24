@@ -1,4 +1,6 @@
-# PourLedger sprint status
+# PourLedger shipping sprint archive
+
+This records the 19 November 2026 sprint. See the [Mainnet release handoff](FINAL-RELEASE.md) for the current deployment references, verification results and remaining gates.
 
 **LOCAL MVP COMPLETE.** Baseline checkout `main` at `581a81c`. Final public submission requires a verified QIE Mainnet deployment, HTTPS site, GitHub source, and owner submission.
 

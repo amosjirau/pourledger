@@ -2,7 +2,7 @@
 
 **Primary track:** Commerce & Real World
 
-**Release status:** LOCAL MVP COMPLETE after the documented local gates. Mainnet, Testnet, public web, and GitHub publication are pending.
+**Release status** — Existing Mainnet registry reported and independently checked by the operator. The latest full workflow passed locally. Public web revision and Mainnet passport smoke checks are pending access. [Production site](https://pourledger-one.vercel.app) · [Source code](https://github.com/amosjirau/pourledger) · [Release evidence](../docs/FINAL-RELEASE.md)
 
 ## Ready-to-paste description
 
@@ -10,13 +10,13 @@ Material delivery notes, test reports and as-built records are often kept separa
 
 PourLedger ties the supplier's declaration to the designated inspector's accepted quantity and the engineer's assignment to a specific structural element. A QR passport reconstructs that chain for a reviewer from the registry's confirmed events and receipts. The original contract enforces project roles, immutable units, an allocation ceiling and replay protection. A designated lab can attach an evidence digest when an actual report is available. The reviewer can compare separately obtained file bytes with the digest without uploading the file.
 
-The application uses Solidity 0.8.24, Foundry, OpenZeppelin EIP-712/ECDSA, Next.js, TypeScript, viem and QR rendering. The UI supports EIP-6963 and injected EIP-1193 wallet providers. The tested deployment is a local Anvil registry. QIE chain, wallet, explorer and hosting checks remain pending. Public release proof belongs in the release checklist once it exists.
+The application uses Solidity 0.8.24, Foundry, OpenZeppelin EIP-712/ECDSA, Next.js, TypeScript, viem and QR rendering. EIP-6963 and injected EIP-1193 wallet providers can connect to the configured EVM chain. The release targets QIE Mainnet chain `1990` and registry `0xf99C353f1B73aA2DeCa2cb7bbe580eEAa6472e63`, with the operator's recorded creation at block `12148098`. The browser rehearsal uses Anvil chain `31337` and synthetic construction data. [Mainnet creation transaction](https://mainnet.qie.digital/tx/0x86f4ed6cf808c6373a742dd9589c369ac5469f2b94759bbb1e770fa59599da23)
 
 PourLedger records precisely what designated wallets attested. Material placement, a signer's legal identity, laboratory accuracy and structural safety require separate verification.
 
 ## Original contribution
 
-The original work is the structural-element-centered evidence model, project-bound signing flow, bounded assignment arithmetic and receipt-backed QR reconstruction. The sprint continued the original PourLedger repository. It used AI assistance for implementation, tests and documentation, with pinned third-party libraries for cryptography and platform plumbing. The submitting developer should verify and explain the actual contributions and record their own review before submitting.
+PourLedger started from its project brief in a fresh repository and uses project-specific code for element-linked attestations, project roles, allocation limits and QR receipt verification. AI assistance was used for implementation, testing, documentation and release work. OpenZeppelin, Next.js, viem and other pinned packages are third-party dependencies. Before submission, the developer must document their own actual contributions and review, and be prepared to demonstrate the role and nonce checks, quantity limits, receipt validation and privacy boundaries. The official rules disqualify entries with minimal developer contribution and require a working Mainnet demonstration. [QIE Hackathon rules](https://hackathon.qie.digital/)
 
 ## 30-second pitch
 
@@ -35,14 +35,14 @@ When you scan a column on a construction site, can you see which material lot we
 | Measure | Observed | Scope |
 | --- | --- | --- |
 | Consented production users or organizations | 0 recorded | No field pilot conducted |
-| Approved production sites or deployments | 0 recorded | Local software rehearsal only |
+| Consented construction sites or field pilots | 0 recorded | Local software rehearsal |
 | Real construction lots recorded | 0 recorded | Three synthetic local lots tested |
-| QIE Testnet or Mainnet transactions | 0 in this sprint | RPC blocked and transactions approval-gated |
+| QIE Mainnet construction activity | Unverified | Only the operator-supplied creation transaction is listed |
 | Reproducible local workflow | Passed | One local project, separate role accounts, actual Anvil receipts |
 
 ## Next 90 days
 
-- **Days 1–30.** Validate the testnet and owner-reviewed deployment process. Interview a supervisor, a supplier and an inspector with consent. Agree on data minimization and a private evidence-handling process.
+- **Days 1–30.** Validate public Mainnet access and the confirmed receipt workflow. Interview a supervisor, a supplier and an inspector with consent. Agree on data minimization and a private evidence-handling process.
 - **Days 31–60.** Seek one consenting site to trial a small set of non-sensitive lot-to-element records. Measure time to locate a receipt, QR arrival and completion, and discrepancies in entered units. These are targets.
 - **Days 61–90.** Review findings with participants. Decide whether project invitation, recovery, independent indexing or private access controls are needed before widening adoption. Report observed results and unresolved risks separately.
 
