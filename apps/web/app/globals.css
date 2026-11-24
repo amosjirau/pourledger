@@ -109,6 +109,9 @@ a {
 .live-shell :is(a, button, summary, input, select):focus-visible { outline: 2px solid #ffcd79; outline-offset: 3px; }
 .live-file input[type="file"] { max-width: 100%; font-size: 0.84rem; }
 .live-result { overflow-wrap: anywhere; }
+.operator-review { display: grid; gap: 0.75rem; border-top: 1px solid #45594d; padding-top: 0.75rem; }
+.operator-review .operator-confirm { grid-template-columns: auto 1fr; align-items: start; gap: 0.5rem; }
+.operator-confirm input[type="checkbox"] { width: auto; margin-top: 0.3rem; accent-color: var(--lime); }
 
 @media (min-width: 850px) {
   .workspace-layout { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: 1.5rem; }

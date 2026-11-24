@@ -5,7 +5,7 @@ import { registryAbi } from "./generated/registry.ts";
 import { validateReceipt, type ExpectedEvent } from "./receipt.ts";
 import { matchesRegistryDomain, matchesRegistryImage } from "./registry-image.ts";
 
-const maxBlocks = 50_000n;
+export const maxPassportHistoryBlocks = 50_000n;
 const chunkSize = 2_000n;
 const maxRecords = 40;
 
@@ -19,7 +19,7 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
   const head = await reader.getBlockNumber();
   const blockNumber = head - BigInt(target.confirmations - 1);
   if (blockNumber < firstBlock) throw new PassportUnavailable("Waiting for the configured confirmation depth.");
-  if (blockNumber - firstBlock + 1n > maxBlocks) throw new PassportUnavailable("This registry needs a verified indexer for its history range.");
+  if (blockNumber - firstBlock + 1n > maxPassportHistoryBlocks) throw new PassportUnavailable("This registry needs a verified indexer for its history range.");
   const [snapshot, code] = await Promise.all([
     reader.getBlock({ blockNumber }),
     reader.getCode({ address: target.registry, blockNumber }),
