@@ -14,6 +14,10 @@ The application uses Solidity 0.8.24, Foundry, OpenZeppelin EIP-712/ECDSA, Next.
 
 PourLedger records precisely what designated wallets attested. Material placement, a signer's legal identity, laboratory accuracy and structural safety require separate verification.
 
+## Final demonstration evidence
+
+The guided operator prepares a labelled synthetic 100 kg rebar workflow, verifies each Rabby-approved receipt before deriving the next action, and checks the confirmed 60 kg allocation to Column C3. Its collector verifies the public lot and element passports on desktop and mobile and records their receipt hashes, QR coordinates and screenshot digests. The local rehearsal is supplemental evidence. Link Mainnet passport URLs and action receipts only from a completed Mainnet manifest with verified public captures. [Operator guide](../docs/DEMO-OPERATOR.md)
+
 ## Original contribution
 
 PourLedger started from its project brief in a fresh repository and uses project-specific code for element-linked attestations, project roles, allocation limits and QR receipt verification. AI assistance was used for implementation, testing, documentation and release work. OpenZeppelin, Next.js, viem and other pinned packages are third-party dependencies. Before submission, the developer must document their own actual contributions and review, and be prepared to demonstrate the role and nonce checks, quantity limits, receipt validation and privacy boundaries. The official rules disqualify entries with minimal developer contribution and require a working Mainnet demonstration. [QIE Hackathon rules](https://hackathon.qie.digital/)

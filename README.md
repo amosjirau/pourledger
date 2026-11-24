@@ -37,6 +37,8 @@ npm run demo:local
 
 The demo prints the verified passport URL after the production-browser Anvil workflow. Keep the process running while using that loopback URL. At `/live`, an EIP-6963 or injected EIP-1193 wallet can connect to the configured deployment.
 
+The [operator guide](docs/DEMO-OPERATOR.md) covers the loopback Rabby runner, resume procedure, and verified Mainnet submission captures for a labelled synthetic workflow.
+
 The single registry exposes `createProject`, `setProjectRole`, `createElement`, `registerMaterialLot`, `acceptLot`, `assignLotToElement` and `attachTestEvidence`. The project workspace verifies event receipts and state at a configured confirmation depth. The signer submits a transaction after the typed-data and simulation checks. Passports link receipt-backed events and verify evidence digests in-browser. Read-only RPC access, QIE-specific thresholds, and current explorer origins require review before launch. [Deployment procedure](docs/DEPLOYMENT.md) · [Security review](docs/SECURITY_REVIEW.md)
 
 ## Repository layout
