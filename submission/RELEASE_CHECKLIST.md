@@ -15,4 +15,4 @@
 
 The official site specifies a Mainnet deployment and a deadline of 30 November 2026 at 23:59 CET, also 23:59 WAT. The portal asks for the repository, live demo URL, contract address and track. Review the current rules at submission. [QIE Hackathon](https://hackathon.qie.digital/)
 
-Use the [operator guide](../docs/DEMO-OPERATOR.md), [Mainnet release handoff](../docs/FINAL-RELEASE.md), [submission copy](SUBMISSION.md), and [demo script](DEMO_SCRIPT.md).
+The [WSL handoff](../release-wsl.sh) verifies the production revision, runs the loopback Rabby operator, and creates the final submission archive from confirmed Mainnet receipts and public captures. Use the [operator guide](../docs/DEMO-OPERATOR.md), [Mainnet release handoff](../docs/FINAL-RELEASE.md), and [submission copy](SUBMISSION.md).

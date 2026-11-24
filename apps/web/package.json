@@ -13,7 +13,7 @@
     "release:verification-input": "node scripts/verification-input.mjs",
     "release:mainnet": "node --use-env-proxy scripts/mainnet-release.mjs",
     "lint": "biome lint .",
-    "test": "node --test test/*.test.ts",
+    "test": "node --test test/*.test.*",
     "test:browser": "node scripts/anvil-workflow.mjs --fixture",
     "test:browser:operator": "node scripts/anvil-workflow.mjs --fixture --operator",
     "demo:local": "node scripts/anvil-workflow.mjs --fixture --serve",

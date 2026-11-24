@@ -11,37 +11,15 @@ This workflow creates labelled synthetic construction records on the existing QI
 | Local operator | [http://127.0.0.1:7341/operator/demo](http://127.0.0.1:7341/operator/demo) |
 | Public verification | [Public workspace](https://pourledger-one.vercel.app/live) |
 
-## Start the local operator
+## Start the WSL release handoff
 
-Use the reviewed checkout, Node.js 24, and a dedicated desktop browser profile with a trusted Rabby extension. In WSL, use its localhost forwarding to open the exact loopback URL in the Windows browser. The server binds to `127.0.0.1` and the operator route requires an explicit local opt-in. Keep the environment variables server-side and the operator origin private.
-
-If transferring the reviewed commits with the supplied Git bundle, start from the existing GitHub checkout containing `698a3a3`. Fetch the bundle into a review branch and switch to it.
+Use Node.js 24 and a dedicated Windows browser profile with a trusted Rabby extension. Open the exact loopback URL through WSL localhost forwarding. The handoff checks out the reviewed GitHub revision in a dedicated WSL working directory and binds the operator to `127.0.0.1`.
 
 ```bash
-git fetch /path/to/pourledger-demo-operator.bundle main:refs/heads/demo-operator-review
-git switch demo-operator-review
+bash /path/to/release-wsl.sh FULL_REVIEWED_GITHUB_MAIN_SHA --publish
 ```
 
-```bash
-cd /workspace/pourledger/apps/web
-npm ci
-npm run build
-
-export POURLEDGER_DEMO_OPERATOR=mainnet
-export POURLEDGER_CHAIN_ID=1990
-export POURLEDGER_REGISTRY=0xf99C353f1B73aA2DeCa2cb7bbe580eEAa6472e63
-export POURLEDGER_DEPLOYMENT_BLOCK=12148098
-export POURLEDGER_PUBLIC_ORIGIN=https://pourledger-one.vercel.app
-export POURLEDGER_MAINNET_EXPLORER_ORIGIN=https://mainnet.qie.digital
-read -rsp 'Approved QIE Mainnet HTTPS read RPC: ' POURLEDGER_RPC_URL
-printf '\n'
-read -rp 'Reviewed QIE confirmation depth: ' POURLEDGER_CONFIRMATIONS
-export POURLEDGER_RPC_URL POURLEDGER_CONFIRMATIONS
-POURLEDGER_MAINNET_READ_RPC="$POURLEDGER_RPC_URL" npm run --silent release:mainnet -- --verify
-npm run demo:operator
-```
-
-Proceed after the read-only verifier confirms chain 1990, the pinned creation receipt, runtime and domain. Open the public workspace from a clean browser and confirm its registry and current verification status before spending gas. The runner pauses wallet actions if the deployment exceeds the 50,000-block direct passport verification limit. A verification-unavailable message or missing approved RPC access blocks the funded demo and submission capture. Choose the confirmation depth with the operator's QIE policy. The runner checks that depth and the canonical block identifiers.
+Provide the authorized Vercel token and team scope, approved QIE Mainnet read RPC, and reviewed confirmation depth when prompted. The script verifies that the existing Vercel alias points to the GitHub-linked `apps/web` project. With `--publish` it requests a production deployment of the exact reviewed commit if a matching deployment is absent. The read-only default verifies the Git integration's existing deployment. The loopback operator starts after Vercel serves the exact revision, the public desktop and mobile routes pass, and QIE read-only checks confirm the creation receipt, runtime and domain. Wallet actions pause beyond the 50,000-block direct passport verification limit.
 
 ## Review and approve each step in Rabby
 
@@ -72,12 +50,10 @@ The duplicate guard covers its journal in the same browser profile and origin. U
 
 ## Collect verified submission evidence
 
-Download the journal after **Verified synthetic workflow complete**. In a terminal with the same approved environment, install a compatible Playwright Chromium if necessary and collect into a new directory. The collector re-verifies the receipts and registry state before and after capture. It opens both public passport URLs on desktop and mobile, checks their coordinates and receipt hashes, decodes the rendered QR, compares the exact synthetic evidence bytes and writes SHA-256 file hashes to the manifest. Browser capture runs without a wallet and permits only same-origin reads.
+Download the journal after **Verified synthetic workflow complete**. Paste its WSL path into the waiting handoff. The script verifies the receipts and state again, then checks both public passports on desktop and mobile, decodes their QRs, and hashes the screenshots and evidence files. It verifies the Vercel revision again before assembling `submission.tar.gz`. If resuming collection later, run the same executable with the journal path.
 
 ```bash
-cd /workspace/pourledger/apps/web
-npx playwright install chromium
-npm run demo:collect -- /path/to/downloaded-journal.json /path/to/new-evidence-directory
+bash /path/to/release-wsl.sh FULL_REVIEWED_GITHUB_MAIN_SHA --journal /path/to/completed-journal.json
 ```
 
 If using an approved system Chromium installation, export `PLAYWRIGHT_CHROMIUM_PATH` with its executable path. `manifest.json` contains confirmed transactions, finality snapshot, generated IDs, public passport check results, and evidence file digests. The collector exits nonzero for an incomplete public capture and leaves `submissionReady` false. Only claim a verified Mainnet demonstration when `scope` is `synthetic-qie-mainnet` and `submissionReady` is `true`. The mainnet submission should link the exact generated passports and confirmed transactions, use the collector's verified screenshots, and disclose that the records, including the optional lab evidence, are synthetic. The blockchain establishes signed statements, bounded allocation, and byte integrity. Physical installation, laboratory validity and signer identity require independent verification.
