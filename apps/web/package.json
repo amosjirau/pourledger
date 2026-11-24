@@ -15,7 +15,10 @@
     "lint": "biome lint .",
     "test": "node --test test/*.test.ts",
     "test:browser": "node scripts/anvil-workflow.mjs --fixture",
+    "test:browser:operator": "node scripts/anvil-workflow.mjs --fixture --operator",
     "demo:local": "node scripts/anvil-workflow.mjs --fixture --serve",
+    "demo:operator": "node --use-env-proxy node_modules/next/dist/bin/next start --hostname 127.0.0.1 --port 7341",
+    "demo:collect": "node --use-env-proxy scripts/demo-collect.mjs",
     "smoke:visual": "node scripts/visual-smoke.cjs",
     "typecheck": "tsc --noEmit"
   },

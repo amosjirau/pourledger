@@ -10,6 +10,8 @@ import { keccak256, stringToHex } from "viem";
 import jsQR from "jsqr";
 import { PNG } from "pngjs";
 import { startRecording } from "./demo-media.mjs";
+import { exerciseDemoOperator } from "./demo-operator-browser.mjs";
+import { demoConfiguration } from "../lib/demo-verify.ts";
 
 const chainId = 31337;
 const artifactUrl = new URL("../../../out/PourLedgerRegistry.sol/PourLedgerRegistry.json", import.meta.url);
@@ -22,6 +24,7 @@ let stopRecording;
 const captureDir = process.env.POURLEDGER_CAPTURE ? resolve(process.env.POURLEDGER_CAPTURE) : undefined;
 const serve = process.argv.includes("--serve");
 const useFixture = process.argv.includes("--fixture");
+const operator = process.argv.includes("--operator");
 const recordMedia = captureDir && !process.argv.includes("--screenshots-only");
 const transactions = [];
 const stage = async (seconds) => { if (recordMedia) await delay(seconds * 1000); };
@@ -106,17 +109,29 @@ async function run() {
     deployment = { hash, block: String(BigInt(receipt.blockNumber)), gas: String(BigInt(receipt.gasUsed)) };
   }
 
-  const server = start(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
-    ...process.env,
+  const settings = {
     POURLEDGER_CHAIN_ID: String(chainId),
     POURLEDGER_REGISTRY: registry,
     POURLEDGER_RPC_URL: rpc,
     POURLEDGER_DEPLOYMENT_BLOCK: deployment?.block ?? "0",
     POURLEDGER_CONFIRMATIONS: "1",
     POURLEDGER_PUBLIC_ORIGIN: origin,
+    POURLEDGER_DEMO_OPERATOR: operator ? "anvil" : "",
+  };
+  const server = start(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
+    ...process.env, ...settings,
   });
   await waitFor(async () => (await fetch(`${origin}/live`, { signal: AbortSignal.timeout(2_000) })).ok, server);
   browser = await chromium.launch({ executablePath: chromiumPath, headless: true });
+  if (operator) {
+    Object.assign(process.env, settings);
+    if (captureDir) await mkdir(captureDir, { recursive: true });
+    await exerciseDemoOperator({
+      origin, browser, request, accounts: [supervisor, supplier, inspector, engineer, lab], captureDir, config: demoConfiguration(), chromiumPath,
+    });
+    return;
+  }
+  assert.equal((await fetch(`${origin}/operator/demo`)).status, 404);
   const page = await browser.newPage({ viewport: captureDir ? { width: 1240, height: 880 } : { width: 390, height: 844 } });
   page.setDefaultTimeout(15_000);
   const externalRequests = [];
