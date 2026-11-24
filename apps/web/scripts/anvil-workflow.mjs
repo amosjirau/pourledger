@@ -21,8 +21,10 @@ let browser;
 let stopRecording;
 const captureDir = process.env.POURLEDGER_CAPTURE ? resolve(process.env.POURLEDGER_CAPTURE) : undefined;
 const serve = process.argv.includes("--serve");
+const useFixture = process.argv.includes("--fixture");
+const recordMedia = captureDir && !process.argv.includes("--screenshots-only");
 const transactions = [];
-const stage = async (seconds) => { if (captureDir) await delay(seconds * 1000); };
+const stage = async (seconds) => { if (recordMedia) await delay(seconds * 1000); };
 
 async function port() {
   const server = createServer();
@@ -83,20 +85,33 @@ async function run() {
   await assert.rejects(promisify(execFile)(process.execPath, ["scripts/deployment-preflight.mjs"], {
     env: { ...preflightEnv, POURLEDGER_RPC_URL: "http://example.invalid/" },
   }), /Use a loopback Anvil RPC/);
-  const deploymentHash = await request("eth_sendTransaction", [{ from: supervisor, data: artifact.bytecode.object, gas: "0x989680" }]);
-  let deploymentReceipt;
-  await waitFor(async () => (deploymentReceipt = await request("eth_getTransactionReceipt", [deploymentHash])), node);
-  assert.equal(deploymentReceipt.status, "0x1");
-  const registry = deploymentReceipt.contractAddress.toLowerCase();
-  assert.equal(preflight.proposedAddress.toLowerCase(), registry);
-  assert.equal(BigInt(preflight.gasEstimate), BigInt(deploymentReceipt.gasUsed));
+  const registry = preflight.proposedAddress.toLowerCase();
+  const creation = { from: supervisor, data: artifact.bytecode.object, gas: "0x989680" };
+  let deployment = null;
+  let fixtureRuntimeHash;
+  if (useFixture) {
+    const runtime = await request("eth_call", [creation, "latest"]);
+    assert.match(runtime, /^0x[0-9a-f]{2,}$/i);
+    await request("anvil_setCode", [registry, runtime]);
+    assert.equal(await request("eth_getCode", [registry, "latest"]), runtime);
+    assert.equal(await request("eth_blockNumber"), "0x0");
+    fixtureRuntimeHash = keccak256(runtime);
+  } else {
+    const hash = await request("eth_sendTransaction", [creation]);
+    let receipt;
+    await waitFor(async () => (receipt = await request("eth_getTransactionReceipt", [hash])), node);
+    assert.equal(receipt.status, "0x1");
+    assert.equal(receipt.contractAddress.toLowerCase(), registry);
+    assert.equal(BigInt(preflight.gasEstimate), BigInt(receipt.gasUsed));
+    deployment = { hash, block: String(BigInt(receipt.blockNumber)), gas: String(BigInt(receipt.gasUsed)) };
+  }
 
   const server = start(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(webPort)], {
     ...process.env,
     POURLEDGER_CHAIN_ID: String(chainId),
     POURLEDGER_REGISTRY: registry,
     POURLEDGER_RPC_URL: rpc,
-    POURLEDGER_DEPLOYMENT_BLOCK: String(BigInt(deploymentReceipt.blockNumber)),
+    POURLEDGER_DEPLOYMENT_BLOCK: deployment?.block ?? "0",
     POURLEDGER_CONFIRMATIONS: "1",
     POURLEDGER_PUBLIC_ORIGIN: origin,
   });
@@ -174,10 +189,8 @@ async function run() {
   const path = (kind, id) => `/passport/${chainId}/${registry}/${kind}/${id}`;
 
   await page.goto(`${origin}/live`);
-  if (captureDir) {
-    await mkdir(captureDir, { recursive: true });
-    stopRecording = await startRecording(page, captureDir);
-  }
+  if (captureDir) await mkdir(captureDir, { recursive: true });
+  if (recordMedia) stopRecording = await startRecording(page, captureDir);
   const workspace = page.getByRole("region", { name: "Verified project workspace" });
   await workspace.getByText("No projects at this confirmation depth. Connect a wallet to create one.").waitFor();
   await stage(5);
@@ -191,8 +204,12 @@ async function run() {
     window.workflowWallet.emit("chainChanged", "0x7a69");
   });
   await panel.getByText("Wallet chain 31337").waitFor();
+  await panel.getByText("Hash a reference", { exact: true }).click();
+  await panel.getByLabel("Project reference").fill("  local project  ");
+  await panel.getByRole("button", { name: "Use reference digest" }).click();
+  assert.equal(await panel.getByLabel("Project digest").inputValue(), hash("local project"));
   hideReceipts = true;
-  await runAction("project", "Create project", { projectHash: hash("local project"), supervisor }, "Pending");
+  await runAction("project", "Create project", { supervisor }, "Pending");
   hideReceipts = false;
   await panel.getByText("Confirmed", { exact: true }).waitFor();
   await panel.getByText("Record ID 1").waitFor();
@@ -215,10 +232,17 @@ async function run() {
   await stage(5);
   await runAction("element", "Create structural element", { projectId: "1", elementCodeHash: hash("C3"), elementType: "2" });
   assert.equal(await panel.getByRole("link", { name: "Open public passport" }).getAttribute("href"), path("element", 1));
+  await panel.getByLabel("Registry action").selectOption("register");
+  const supplierField = panel.getByLabel("Supplier address");
+  assert.equal((await supplierField.inputValue()).toLowerCase(), supervisor.toLowerCase());
   await account(supplier);
+  assert.equal((await supplierField.inputValue()).toLowerCase(), supplier.toLowerCase());
+  await panel.getByLabel("Common unit").selectOption(hash("kg"));
+  assert.equal(await panel.getByLabel("Unit digest").inputValue(), hash("kg"));
+  if (captureDir) await panel.screenshot({ path: join(captureDir, "lot-registration-desktop.png") });
   for (const lot of ["accepted", "rejected", "partial"]) {
     await runAction("register", "Register supplier lot", {
-      projectId: "1", lotHash: hash(lot), supplier, materialType: "1", quantity: "100", unitCode: hash("kg"),
+      projectId: "1", lotHash: hash(lot), materialType: "1", quantity: "100",
     });
   }
   await workspace.getByText("100 kg declared", { exact: true }).first().waitFor();
@@ -257,7 +281,17 @@ async function run() {
   await stage(8);
   await account(lab);
   const labEvidence = { lotId: "1", sampleHash: hash("sample"), resultsHash: hash("results bytes") };
-  await runAction("lab", "Attach designated-lab evidence", labEvidence);
+  await panel.getByLabel("Registry action").selectOption("lab");
+  await panel.getByText("Hash a reference", { exact: true }).click();
+  await panel.getByLabel("Sample reference").fill("sample");
+  await panel.getByRole("button", { name: "Use reference digest" }).click();
+  await panel.locator('input[type="file"]').last().setInputFiles({
+    name: "synthetic-laboratory-result.txt", mimeType: "text/plain", buffer: Buffer.from("results bytes"),
+  });
+  await panel.getByText("Digest calculated.", { exact: true }).waitFor();
+  assert.equal(await panel.getByLabel("Sample digest").inputValue(), labEvidence.sampleHash);
+  assert.equal(await panel.getByLabel("Results evidence digest").inputValue(), labEvidence.resultsHash);
+  await runAction("lab", "Attach designated-lab evidence", { lotId: "1" });
   await runAction("lab", "Attach designated-lab evidence", labEvidence, "Submission unverified");
   await panel.getByText("This sample already has a designated-lab attestation.").waitFor();
   await account(supervisor);
@@ -301,6 +335,9 @@ async function run() {
     await verifier.locator(".live-qr svg").screenshot({ path: join(captureDir, "local-passport-qr.png") });
     await page.goto(origin + path("element", 1));
     await page.getByRole("heading", { name: "Structural element 1" }).waitFor();
+    await page.screenshot({ path: join(captureDir, "passport-desktop.png"), fullPage: true });
+  }
+  if (recordMedia) {
     await stage(14);
     await page.getByRole("link", { name: "Material lot 1" }).click();
     await page.getByRole("heading", { name: "Lab attestation 1" }).waitFor();
@@ -318,21 +355,31 @@ async function run() {
     assert.equal((await verifier.goto(origin + bad)).status(), 404);
     await verifier.getByRole("heading", { name: "Passport not found" }).waitFor();
   }
+  await verifier.goto(`${origin}/live`);
+  await verifier.getByLabel("Passport type").selectOption("lot");
+  await verifier.getByLabel("Record ID").fill("1");
+  await verifier.getByRole("button", { name: "Find passport" }).click();
+  await verifier.waitForURL(origin + path("lot", 1));
+  await verifier.getByRole("heading", { name: "Material lot 1", exact: true }).waitFor();
+  assert.equal((await verifier.goto(`${origin}/passport?chain=${chainId}&registry=${registry}&kind=lot&id=01`)).status(), 400);
   await verifier.goto(origin);
   await verifier.getByText("Synthetic demo data", { exact: true }).waitFor();
+  if (captureDir) await verifier.screenshot({ path: join(captureDir, "synthetic-home-mobile.png"), fullPage: true });
   assert.equal(await verifier.getByText(/Receipt-validated through block/).count(), 0);
   assert.deepEqual(externalRequests, []);
   assert.deepEqual(verifierWrites, []);
   console.log("Wallet-free receipt-backed passport routes, QR coordinates, exact-byte file verification, mobile layout, and synthetic separation passed.");
   const evidence = {
     environment: "Ephemeral local Anvil, synthetic construction inputs, real local EVM receipts",
-    chainId, registry, deployment: { hash: deploymentHash, block: String(BigInt(deploymentReceipt.blockNumber)), gas: String(BigInt(deploymentReceipt.gasUsed)) },
+    chainId, registry, deployment, fixtureRuntimeHash,
     preflight: { creationCodeKeccak256: preflight.creationCodeKeccak256, normalizedRuntimeKeccak256: preflight.normalizedRuntimeKeccak256 },
     elementPassport: origin + path("element", 1), lotPassport: origin + path("lot", 1),
     accounts: { supervisor, supplier, inspector, engineer, lab }, transactions,
   };
   if (captureDir) await writeFile(join(captureDir, "local-receipts.json"), `${JSON.stringify(evidence, null, 2)}\n`);
-  console.log(`Local registry ${registry} deployed in ${deploymentHash} (${evidence.deployment.gas} gas).`);
+  console.log(deployment
+    ? `Local registry ${registry} deployed in ${deployment.hash} (${deployment.gas} gas).`
+    : `Local Anvil fixture ${registry} loaded from simulated runtime (${fixtureRuntimeHash}). No creation transaction.`);
   console.log(`Local passport verified at ${evidence.elementPassport}`);
   if (serve) {
     await browser.close();

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { BaseError, TransactionReceiptNotFoundError, UserRejectedRequestError, type Address, type EIP1193Provider, type Hash } from "viem";
+import { BaseError, keccak256, stringToHex, TransactionReceiptNotFoundError, UserRejectedRequestError, type Address, type EIP1193Provider, type Hash } from "viem";
 import { prepareAction, walletClients, type ActionName } from "../lib/actions.ts";
 import { address, anvilChainId, elementTypes, networks, passportPath, sameHex, unitOptions, type PassportKind, type RegistryTarget } from "../lib/chain.ts";
 import { registryAbi } from "../lib/generated/registry.ts";
@@ -15,20 +15,20 @@ type WalletChoice = { id: string; name: string; provider: EIP1193Provider };
 type Session = { choice: WalletChoice; account: Address; chainId: number };
 type Pending = { hash: Hash; expected: ExpectedEvent };
 type Progress = { label: string; detail?: string; hash?: Hash; link?: string };
-type Field = { name: string; label: string; options?: [string, string][]; hash?: boolean };
+type Field = { name: string; label: string; options?: [string, string][]; hash?: boolean; reference?: string };
 type Context = { project: string; elements: string[]; lots: { id: string; status: number; unit: string; declared: string; available: string }[] };
 
 const projectId = { name: "projectId", label: "Project ID" };
 const lotId = { name: "lotId", label: "Lot ID" };
 const quantity = { name: "quantity", label: "Quantity in the lot’s declared unit" };
 const choices: Record<ActionName, { label: string; fields: Field[] }> = {
-  project: { label: "Create project", fields: [{ name: "projectHash", label: "Project digest", hash: true }, { name: "supervisor", label: "Supervisor address" }] },
+  project: { label: "Create project", fields: [{ name: "projectHash", label: "Project digest", hash: true, reference: "Project reference" }, { name: "supervisor", label: "Supervisor address" }] },
   role: { label: "Manage project role", fields: [projectId, { name: "member", label: "Member address" }, { name: "role", label: "Role", options: [["1", "Inspector"], ["2", "Engineer"], ["3", "Laboratory"]] }, { name: "enabled", label: "Permission", options: [["true", "Grant"], ["false", "Revoke"]] }] },
-  element: { label: "Create structural element", fields: [projectId, { name: "elementCodeHash", label: "Element code digest", hash: true }, { name: "elementType", label: "Element type", options: elementTypes.map((name, index) => [String(index), name]) }] },
-  register: { label: "Register supplier lot", fields: [projectId, { name: "lotHash", label: "Lot digest", hash: true }, { name: "supplier", label: "Supplier address" }, { name: "materialType", label: "Material", options: [["0", "Other"], ["1", "Rebar"], ["2", "Cement"], ["3", "Coarse aggregate"], ["4", "Fine aggregate"], ["5", "Ready mix"]] }, quantity, { name: "unitCode", label: "Unit digest" }] },
+  element: { label: "Create structural element", fields: [projectId, { name: "elementCodeHash", label: "Element code digest", hash: true, reference: "Element reference" }, { name: "elementType", label: "Element type", options: elementTypes.map((name, index) => [String(index), name]) }] },
+  register: { label: "Register supplier lot", fields: [projectId, { name: "lotHash", label: "Lot digest", hash: true, reference: "Lot reference" }, { name: "supplier", label: "Supplier address" }, { name: "materialType", label: "Material", options: [["0", "Other"], ["1", "Rebar"], ["2", "Cement"], ["3", "Coarse aggregate"], ["4", "Fine aggregate"], ["5", "Ready mix"]] }, quantity, { name: "unitCode", label: "Unit digest" }] },
   decision: { label: "Record inspector decision", fields: [lotId, { name: "decision", label: "Decision", options: [["2", "Accept in full"], ["3", "Partially accept"], ["4", "Reject"]] }, { ...quantity, label: "Accepted quantity (0 for rejection)" }, { name: "conditionHash", label: "Condition evidence digest", hash: true }] },
   assign: { label: "Assign lot to element", fields: [lotId, { name: "elementId", label: "Element ID" }, quantity, { name: "evidenceHash", label: "Assignment evidence digest", hash: true }] },
-  lab: { label: "Attach designated-lab evidence", fields: [lotId, { name: "sampleHash", label: "Sample digest", hash: true }, { name: "resultsHash", label: "Results evidence digest", hash: true }] },
+  lab: { label: "Attach designated-lab evidence", fields: [lotId, { name: "sampleHash", label: "Sample digest", hash: true, reference: "Sample reference" }, { name: "resultsHash", label: "Results evidence digest", hash: true }] },
 };
 
 function chainId(value: unknown) {
@@ -326,7 +326,7 @@ export function LiveWallet({ target, context }: { target: RegistryTarget; contex
                 : `#${lot.id}: ${lot.declared} ${lot.unit} declared`).join(" · ") : "No matching records in the verified project snapshot."}</p>
             </div>
           )}
-          <form key={`${action}:${context?.project ?? ""}`} onSubmit={submit}>
+          <form key={`${action}:${context?.project ?? ""}:${session.account}`} onSubmit={submit}>
             {choices[action].fields.map((field) => <ActionField key={field.name} field={field} account={session.account} context={context} lotIds={queuedLots.map((lot) => lot.id)} />)}
             <button type="submit" disabled={busy || !!pending}>{choices[action].label}</button>
           </form>
@@ -350,8 +350,9 @@ export function LiveWallet({ target, context }: { target: RegistryTarget; contex
 
 function ActionField({ field, account, context, lotIds }: { field: Field; account: Address; context?: Context; lotIds: string[] }) {
   const [hash, setHash] = useState("");
-  const options = field.name === "unitCode" ? unitOptions.map((unit) => [unit.hash, unit.label])
-    : field.name === "lotId" ? lotIds.map((id) => [id, `Lot ${id}`])
+  const [reference, setReference] = useState("");
+  const isUnit = field.name === "unitCode";
+  const options = field.name === "lotId" ? lotIds.map((id) => [id, `Lot ${id}`])
     : field.name === "elementId" ? context?.elements.map((id) => [id, `Element ${id}`]) : undefined;
   const defaultValue = field.name === "projectId" ? context?.project
     : ["supervisor", "supplier"].includes(field.name) ? account : undefined;
@@ -362,7 +363,7 @@ function ActionField({ field, account, context, lotIds }: { field: Field; accoun
       <label htmlFor={inputId}>{field.label}
         {field.options ? (
           <select id={inputId} required name={field.name}>{field.options.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
-        ) : field.hash ? (
+        ) : field.hash || isUnit ? (
           <input id={inputId} required name={field.name} value={hash} onChange={(event) => setHash(event.target.value)} autoComplete="off" />
         ) : (
           <input id={inputId} required name={field.name} autoComplete="off" defaultValue={defaultValue}
@@ -371,6 +372,20 @@ function ActionField({ field, account, context, lotIds }: { field: Field; accoun
         )}
       </label>
       {!!options?.length && <datalist id={`options-${field.name}`}>{options.map(([value, label]) => <option value={value} label={label} key={value} />)}</datalist>}
+      {isUnit && <label>Common unit
+        <select value={unitOptions.some((unit) => unit.hash === hash) ? hash : ""} onChange={(event) => setHash(event.target.value)}>
+          <option value="" disabled>Choose a unit or paste a custom digest</option>
+          {unitOptions.map((unit) => <option value={unit.hash} key={unit.hash}>{unit.label}</option>)}
+        </select>
+      </label>}
+      {field.reference && <details className="live-file">
+        <summary>Hash a reference</summary>
+        <label>{field.reference}
+          <input value={reference} onChange={(event) => setReference(event.target.value)} autoComplete="off" maxLength={256} />
+        </label>
+        <small>Use a non-sensitive reference. The browser hashes it locally and the digest is public on-chain.</small>
+        <button type="button" disabled={!reference.trim()} onClick={() => setHash(keccak256(stringToHex(reference.trim())))}>Use reference digest</button>
+      </details>}
       {field.hash && <EvidenceFile onHash={setHash} />}
     </div>
   );
