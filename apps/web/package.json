@@ -11,10 +11,11 @@
     "abi:check": "node scripts/generate-registry.mjs --check",
     "release:preflight": "node scripts/deployment-preflight.mjs",
     "release:verification-input": "node scripts/verification-input.mjs",
+    "release:mainnet": "node --use-env-proxy scripts/mainnet-release.mjs",
     "lint": "biome lint .",
     "test": "node --test test/*.test.ts",
-    "test:browser": "node scripts/anvil-workflow.mjs",
-    "demo:local": "node scripts/anvil-workflow.mjs --serve",
+    "test:browser": "node scripts/anvil-workflow.mjs --fixture",
+    "demo:local": "node scripts/anvil-workflow.mjs --fixture --serve",
     "smoke:visual": "node scripts/visual-smoke.cjs",
     "typecheck": "tsc --noEmit"
   },
