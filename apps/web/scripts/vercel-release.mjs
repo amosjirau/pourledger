@@ -43,7 +43,7 @@ export async function verifyVercel({ request, sourceCommit, publish = false, wai
     if (current.projectId !== project.id) throw new Error("The production alias changed projects.");
     const { deployment } = current;
     if (commit(deployment) !== sourceCommit || deployment.target !== "production" || deployment.readyState !== "READY") return undefined;
-    return { status: "verified", publicOrigin: demoProductionOrigin, sourceCommit, gitRef: "main", projectId: project.id, deploymentId: current.deploymentId };
+    return { status: "verified", method: "vercel-api", publicOrigin: demoProductionOrigin, sourceCommit, gitRef: "main", projectId: project.id, deploymentId: current.deploymentId };
   }
 
   let ready = await proof();

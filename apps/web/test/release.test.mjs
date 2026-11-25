@@ -74,7 +74,7 @@ test("submission generator gates wrong scope, changed deployment and altered fil
   context.after(() => rm(directory, { force: true, recursive: true }));
   await mkdir(join(directory, "mainnet-demo"));
   const save = (name, value) => writeFile(join(directory, name), JSON.stringify(value));
-  const proof = { status: "verified", sourceCommit: sha, publicOrigin: demoProductionOrigin, deploymentId: "dpl_fixture" };
+  const proof = { status: "verified", method: "vercel-api", sourceCommit: sha, publicOrigin: demoProductionOrigin, deploymentId: "dpl_fixture" };
   await save("vercel-before.json", proof);
   await save("vercel-after.json", { ...proof, deploymentId: "dpl_different" });
   await save("mainnet-read.json", { sourceCommit: sha, registryCheck: { status: "verified", observedChainId: 1990 }, ownerDeploymentRecord: {

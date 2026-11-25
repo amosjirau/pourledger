@@ -12,6 +12,7 @@
     "release:preflight": "node scripts/deployment-preflight.mjs",
     "release:verification-input": "node scripts/verification-input.mjs",
     "release:mainnet": "node --use-env-proxy scripts/mainnet-release.mjs",
+    "release:public": "node --use-env-proxy scripts/public-revision.mjs",
     "lint": "biome lint .",
     "test": "node --test test/*.test.*",
     "test:browser": "node scripts/anvil-workflow.mjs --fixture",

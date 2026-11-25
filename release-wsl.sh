@@ -31,10 +31,20 @@ for tool in git node npm curl tar realpath; do command -v "$tool" >/dev/null || 
 [[ $(node -p 'process.versions.node.split(".")[0]') == 24 ]] || fail 'Use Node.js 24.'
 vercel_token=${VERCEL_TOKEN:-}
 unset VERCEL_TOKEN
-if [[ -z $vercel_token ]]; then read -r -s -p 'Authorized Vercel token: ' vercel_token; printf '\n'; fi
-[[ -n $vercel_token ]] || fail 'Vercel project permission is required.'
-if [[ -z ${POURLEDGER_VERCEL_TEAM:-} ]]; then read -r -p 'Vercel team ID or slug (empty for personal scope): ' POURLEDGER_VERCEL_TEAM; fi
-export POURLEDGER_VERCEL_TEAM
+if (( ${#publish[@]} )); then
+  if [[ -z $vercel_token ]]; then read -r -s -p 'Authorized Vercel token: ' vercel_token; printf '\n'; fi
+  [[ -n $vercel_token ]] || fail 'Vercel project permission is required to publish a revision.'
+  if [[ -z ${POURLEDGER_VERCEL_TEAM:-} ]]; then read -r -p 'Vercel team ID or slug (empty for personal scope): ' POURLEDGER_VERCEL_TEAM; fi
+  export POURLEDGER_VERCEL_TEAM
+fi
+
+production_proof() {
+  if (( ${#publish[@]} )); then
+    VERCEL_TOKEN="$vercel_token" node --use-env-proxy scripts/vercel-release.mjs "$revision" "$@"
+  else
+    npm run --silent release:public -- "$revision"
+  fi
+}
 
 mkdir -p -- "$work_dir"
 work_dir=$(realpath -e -- "$work_dir")
@@ -51,7 +61,7 @@ cd "$checkout/apps/web"
 output=$(mktemp -d "$work_dir/release.XXXXXXXX")
 printf 'Release evidence directory %s\n' "$output"
 npm ci
-VERCEL_TOKEN="$vercel_token" node --use-env-proxy scripts/vercel-release.mjs "$revision" "${publish[@]}" > "$output/vercel-before.json"
+production_proof "${publish[@]}" > "$output/vercel-before.json"
 if [[ -z ${POURLEDGER_RPC_URL:-} ]]; then read -r -s -p 'Approved QIE Mainnet HTTPS read RPC: ' POURLEDGER_RPC_URL; printf '\n'; fi
 if [[ -z ${POURLEDGER_CONFIRMATIONS:-} ]]; then read -r -p 'Reviewed QIE confirmation depth: ' POURLEDGER_CONFIRMATIONS; fi
 [[ -n $POURLEDGER_RPC_URL && $POURLEDGER_CONFIRMATIONS =~ ^[1-9][0-9]{0,4}$ ]] && (( POURLEDGER_CONFIRMATIONS <= 10000 )) ||
@@ -96,7 +106,7 @@ if [[ -z $journal ]]; then
   journal=$(realpath -e -- "$journal")
 fi
 npm run --silent demo:collect -- "$journal" "$output/mainnet-demo"
-VERCEL_TOKEN="$vercel_token" node --use-env-proxy scripts/vercel-release.mjs "$revision" > "$output/vercel-after.json"
+production_proof > "$output/vercel-after.json"
 unset vercel_token
 node scripts/release-packet.mjs "$output"
 tar -czf "$output/submission.tar.gz" -C "$output" SUBMISSION.md mainnet-read.json vercel-before.json vercel-after.json \

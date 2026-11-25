@@ -19,7 +19,7 @@ Use Node.js 24 and a dedicated Windows browser profile with a trusted Rabby exte
 bash /path/to/release-wsl.sh FULL_REVIEWED_GITHUB_MAIN_SHA --publish
 ```
 
-Provide the authorized Vercel token and team scope, approved QIE Mainnet read RPC, and reviewed confirmation depth when prompted. The script verifies that the existing Vercel alias points to the GitHub-linked `apps/web` project. With `--publish` it requests a production deployment of the exact reviewed commit if a matching deployment is absent. The read-only default verifies the Git integration's existing deployment. The loopback operator starts after Vercel serves the exact revision, the public desktop and mobile routes pass, and QIE read-only checks confirm the creation receipt, runtime and domain. Wallet actions pause beyond the 50,000-block direct passport verification limit.
+Provide the approved QIE Mainnet read RPC and reviewed confirmation depth when prompted. The read-only default verifies the exact revision through the live site’s `/release.json` marker. The marker publishes only GitHub release metadata, so it can be checked directly from Cloud using `npm run release:public -- FULL_REVIEWED_GITHUB_MAIN_SHA` in `apps/web`. If a manual Vercel release is needed, `--publish` uses the authorized token and team scope to verify the GitHub-linked `apps/web` project and request the reviewed production deployment if a matching one is absent. The loopback operator starts after Vercel serves the exact revision, the public desktop and mobile routes pass, and QIE read-only checks confirm the creation receipt, runtime and domain. Wallet actions pause beyond the 50,000-block direct passport verification limit.
 
 ## Review and approve each step in Rabby
 
