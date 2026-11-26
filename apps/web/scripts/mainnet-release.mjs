@@ -48,14 +48,23 @@ if (process.env.POURLEDGER_REVIEWED_SUPERVISOR) {
   };
 }
 
+async function checked(label, operation) {
+  try { return await operation(); }
+  catch (error) {
+    const name = typeof error?.name === 'string' && /^[A-Za-z0-9_]{1,80}$/.test(error.name) ? error.name : 'Error';
+    const status = error?.status ?? error?.cause?.status;
+    throw new ReleaseCheckError(`${label} failed (${name}${Number.isInteger(status) ? `, HTTP ${status}` : ''}). Check endpoint connectivity and historical RPC support.`);
+  }
+}
+
 async function checkRegistry(reader, target) {
-  const observedChainId = await reader.getChainId();
+  const observedChainId = await checked('eth_chainId', () => reader.getChainId());
   if (observedChainId !== chainId) throw new ReleaseCheckError(`RPC returned chain ${observedChainId}, expected ${chainId}.`);
   const [receipt, transaction, block, head] = await Promise.all([
-    reader.getTransactionReceipt({ hash: transactionHash }),
-    reader.getTransaction({ hash: transactionHash }),
-    reader.getBlock({ blockNumber: deploymentBlock }),
-    reader.getBlockNumber(),
+    checked('deployment receipt', () => reader.getTransactionReceipt({ hash: transactionHash })), 
+    checked('deployment transaction', () => reader.getTransaction({ hash: transactionHash })), 
+    checked('canonical deployment block', () => reader.getBlock({ blockNumber: deploymentBlock })), 
+    checked('current block number', () => reader.getBlockNumber()),
   ]);
   if (receipt.status !== "success" || receipt.transactionHash !== transactionHash ||
       !receipt.contractAddress || !sameHex(receipt.contractAddress, registry) ||
@@ -69,20 +78,20 @@ async function checkRegistry(reader, target) {
   if (snapshotBlock < deploymentBlock) throw new ReleaseCheckError("The deployment has not reached the requested confirmation depth.");
   const read = { address: registry, abi: registryAbi, blockNumber: snapshotBlock };
   const [snapshot, code, domain, counts] = await Promise.all([
-    reader.getBlock({ blockNumber: snapshotBlock }),
-    reader.getCode({ address: registry, blockNumber: snapshotBlock }),
-    reader.readContract({ ...read, functionName: "domainSeparatorV4" }),
+    checked('confirmed snapshot block', () => reader.getBlock({ blockNumber: snapshotBlock })), 
+    checked('historical runtime bytecode', () => reader.getCode({ address: registry, blockNumber: snapshotBlock })), 
+    checked("historical signing domain", () => reader.readContract({ ...read, functionName: "domainSeparatorV4" })),
     Promise.all(countFunctions.map(async (functionName) => [
-      functionName, await reader.readContract({ ...read, functionName }),
+      functionName, await checked(`historical ${functionName}`, () => reader.readContract({ ...read, functionName })),
     ])),
   ]);
   if (!matchesRegistryImage(code) || !matchesRegistryDomain(domain, target)) {
     throw new ReleaseCheckError("The confirmation snapshot runtime or EIP-712 domain differs from the compiled registry.");
   }
   const [chainAfter, snapshotAfter, creationAfter] = await Promise.all([
-    reader.getChainId(),
-    reader.getBlock({ blockNumber: snapshotBlock }),
-    reader.getBlock({ blockNumber: deploymentBlock }),
+    checked('chain recheck', () => reader.getChainId()),
+    checked('canonical snapshot recheck', () => reader.getBlock({ blockNumber: snapshotBlock })), 
+    checked('canonical deployment recheck', () => reader.getBlock({ blockNumber: deploymentBlock })), 
   ]);
   if (chainAfter !== observedChainId || snapshotAfter.hash !== snapshot.hash || creationAfter.hash !== block.hash) {
     throw new ReleaseCheckError("The chain or canonical blocks changed during verification.");
@@ -129,8 +138,9 @@ if (verify) {
   } catch (error) {
     manifest.registryCheck = {
       status: "unverified",
-      reason: error instanceof ReleaseCheckError ? error.message : "Read-only RPC or input validation failed.",
+      reason: error instanceof ReleaseCheckError ? error.message : "Read-only RPC or input validation failed before a named RPC operation.",
     };
+    console.error(manifest.registryCheck.reason);
     process.exitCode = 1;
   }
 }
