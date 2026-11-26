@@ -1,6 +1,9 @@
 import { getAbiItem, type Hash, type Log } from "viem";
 import { type Coordinates, matchesTarget, sameHex } from "./chain.ts";
 import type { deployment } from "./deployment.ts";
+import type { EventCursor, EventPage } from "./indexer/events.ts";
+import { verifiedIndexSnapshot } from "./indexer/snapshot.ts";
+import { type EventFilters, indexEvents, indexedAssigned } from "./indexer/store.ts";
 import { registryAbi } from "./generated/registry.ts";
 import { validateReceipt, type ExpectedEvent } from "./receipt.ts";
 import { matchesRegistryDomain, matchesRegistryImage } from "./registry-image.ts";
@@ -17,13 +20,20 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
   const actualChainId = await reader.getChainId();
   if (actualChainId !== target.chainId) throw new PassportUnavailable("The verification RPC returned a different chain ID.");
   const head = await reader.getBlockNumber();
-  const blockNumber = head - BigInt(target.confirmations - 1);
-  if (blockNumber < firstBlock) throw new PassportUnavailable("Waiting for the configured confirmation depth.");
-  if (blockNumber - firstBlock + 1n > maxPassportHistoryBlocks) throw new PassportUnavailable("This registry needs a verified indexer for its history range.");
+  const confirmedHead = head - BigInt(target.confirmations - 1);
+  if (confirmedHead < firstBlock) throw new PassportUnavailable("Waiting for the configured confirmation depth.");
+  const index = await verifiedIndexSnapshot(target, firstBlock, confirmedHead, reader).catch((error) => {
+    throw new PassportUnavailable(error instanceof Error && error.constructor === Error ? error.message : "Registry index could not be independently verified.");
+  });
+  const blockNumber = index?.blockNumber ?? confirmedHead;
+  if (!index && blockNumber - firstBlock + 1n > maxPassportHistoryBlocks) throw new PassportUnavailable("This registry needs a verified indexer for its history range.");
   const [snapshot, code] = await Promise.all([
     reader.getBlock({ blockNumber }),
     reader.getCode({ address: target.registry, blockNumber }),
   ]);
+  if (!snapshot.hash || snapshot.number !== blockNumber || (index && !sameHex(snapshot.hash, index.checkedHash))) {
+    throw new PassportUnavailable("The requested canonical snapshot changed.");
+  }
   if (!matchesRegistryImage(code)) throw new PassportUnavailable("The confirmed address does not match the compiled registry.");
   const separator = await reader.readContract({ address: target.registry, abi: registryAbi, functionName: "domainSeparatorV4", blockNumber });
   if (!matchesRegistryDomain(separator, target)) throw new PassportUnavailable("The registry returned a different signing domain.");
@@ -47,18 +57,26 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
 
   async function logs<T extends Log<bigint, number, false> & { args: ExpectedEvent["fields"] }>(
     name: keyof typeof events,
-    filters: Record<string, bigint | readonly bigint[]>,
-    readPage: (range: { fromBlock: bigint; toBlock: bigint }) => Promise<T[]>,
+    filters: EventFilters,
+    readPage: (range: { fromBlock: bigint; toBlock: bigint }) => Promise<T[]>, cursor?: EventCursor, latestRoles = false,
   ) {
     const results: T[] = [];
-    for (let fromBlock = firstBlock; fromBlock <= blockNumber; fromBlock += chunkSize) {
-      const end = fromBlock + chunkSize - 1n;
-      const page = await readPage({ fromBlock, toBlock: end < blockNumber ? end : blockNumber });
-      results.push(...page);
-      if (results.length > maxRecords) throw new PassportUnavailable("This passport exceeds the direct verification limit. A verified indexer is required.");
+    let next: string | undefined;
+    if (index) {
+      const page = await indexEvents(index.db, target, blockNumber, name, filters, cursor, latestRoles);
+      results.push(...page.rows as unknown as T[]);
+      next = page.next;
+    } else {
+      if (cursor) throw new PassportUnavailable("Indexed history is unavailable. Open the passport without a page cursor.");
+      for (let fromBlock = firstBlock; fromBlock <= blockNumber; fromBlock += chunkSize) {
+        const end = fromBlock + chunkSize - 1n;
+        const page = await readPage({ fromBlock, toBlock: end < blockNumber ? end : blockNumber });
+        results.push(...page);
+        if (results.length > maxRecords) throw new PassportUnavailable("This passport exceeds the direct verification limit. A verified indexer is required.");
+      }
     }
     const seen = new Set<string>();
-    return Promise.all(results.map(async (log) => {
+    const rows = await Promise.all(results.map(async (log) => {
       const key = `${log.transactionHash}:${log.logIndex}`;
       if (seen.has(key)) throw new PassportUnavailable("The RPC returned a duplicate event.");
       seen.add(key);
@@ -66,14 +84,15 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
           !sameHex(log.address, target.registry) ||
           !Object.entries(filters).every(([field, id]) => {
             const actual = log.args[field];
-            return typeof id === "bigint" ? actual === id : typeof actual === "bigint" && id.includes(actual);
+            return Array.isArray(id) ? typeof actual === "bigint" && id.includes(actual) : actual === id;
           })) {
         throw new PassportUnavailable("An event falls outside the requested passport coordinates.");
       }
       const receiptRequest = receipts.get(log.transactionHash) ?? reader.getTransactionReceipt({ hash: log.transactionHash });
       receipts.set(log.transactionHash, receiptRequest);
       const [receipt, block] = await Promise.all([receiptRequest, canonical(log.blockNumber)]);
-      if (receipt.blockHash !== log.blockHash || block.hash !== log.blockHash || receipt.blockNumber !== log.blockNumber) {
+      if (receipt.blockHash !== log.blockHash || block.hash !== log.blockHash || receipt.blockNumber !== log.blockNumber ||
+          block.number !== log.blockNumber) {
         throw new PassportUnavailable("An event changed block. Retry after the chain settles.");
       }
       validateReceipt({
@@ -82,30 +101,31 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
       });
       return { args: log.args as T["args"], hash: log.transactionHash, block: log.blockNumber, index: log.logIndex };
     }));
+    return { rows, next };
   }
   const query = { address: target.registry, strict: true } as const;
-  const projectLogs = (projectId: readonly bigint[]) => logs("ProjectCreated", { projectId }, (range) =>
-    reader.getLogs({ ...query, ...range, event: events.ProjectCreated, args: { projectId } }));
-  const projectRoles = (projectId: bigint) => logs("ProjectRoleUpdated", { projectId }, (range) =>
-    reader.getLogs({ ...query, ...range, event: events.ProjectRoleUpdated, args: { projectId } }));
-  const projectElements = (projectId: bigint) => logs("ElementCreated", { projectId }, (range) =>
-    reader.getLogs({ ...query, ...range, event: events.ElementCreated, args: { projectId } }));
-  const projectLots = (projectId: bigint) => logs("MaterialLotRegistered", { projectId }, (range) =>
-    reader.getLogs({ ...query, ...range, event: events.MaterialLotRegistered, args: { projectId } }));
-  const projectDecisions = (projectId: bigint) => logs("LotDecisionRecorded", { projectId }, (range) =>
-    reader.getLogs({ ...query, ...range, event: events.LotDecisionRecorded, args: { projectId } }));
-  const elementLogs = (elementId: bigint) => logs("ElementCreated", { elementId }, (range) =>
-    reader.getLogs({ ...query, ...range, event: events.ElementCreated, args: { elementId } }));
+  const projectLogs = async (projectId: readonly bigint[]) => (await logs("ProjectCreated", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.ProjectCreated, args: { projectId } }))).rows;
+  const projectRoles = (projectId: bigint, cursor?: EventCursor) => logs("ProjectRoleUpdated", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.ProjectRoleUpdated, args: { projectId } }), cursor, true);
+  const projectElements = (projectId: bigint, cursor?: EventCursor) => logs("ElementCreated", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.ElementCreated, args: { projectId } }), cursor);
+  const projectLots = (projectId: bigint, cursor?: EventCursor) => logs("MaterialLotRegistered", { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.MaterialLotRegistered, args: { projectId } }), cursor);
+  const projectDecisions = async (projectId: bigint, lotIds: bigint[]) => (await logs("LotDecisionRecorded", index ? { projectId, lotId: lotIds } : { projectId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.LotDecisionRecorded, args: { projectId } }))).rows;
+  const elementLogs = async (elementId: bigint) => (await logs("ElementCreated", { elementId }, (range) =>
+    reader.getLogs({ ...query, ...range, event: events.ElementCreated, args: { elementId } }))).rows;
   function readLot(lotId: bigint) {
     return reader.readContract({ address: target.registry, abi: registryAbi, functionName: "materialLots", args: [lotId], blockNumber });
   }
   function readElement(elementId: bigint) {
     return reader.readContract({ address: target.registry, abi: registryAbi, functionName: "elements", args: [elementId], blockNumber });
   }
-  async function assignments(filter: { elementId: bigint } | { lotId: bigint }, projectId: bigint) {
+  async function assignments(filter: { elementId: bigint } | { lotId: bigint }, projectId: bigint, cursor?: EventCursor) {
     const entries = await logs("LotAssignedToElement", filter, (range) =>
-      reader.getLogs({ ...query, ...range, event: events.LotAssignedToElement, args: filter }));
-    return Promise.all(entries.map(async (record) => {
+      reader.getLogs({ ...query, ...range, event: events.LotAssignedToElement, args: filter }), cursor);
+    const rows = await Promise.all(entries.rows.map(async (record) => {
       const a = record.args;
       const [stored, element, lot] = await Promise.all([
         reader.readContract({ address: target.registry, abi: registryAbi, functionName: "assignments", args: [a.assignmentId], blockNumber }),
@@ -113,22 +133,24 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
       ]);
       if (stored[0] !== a.lotId || stored[1] !== a.elementId || stored[2] !== a.usedQuantity ||
           !sameHex(stored[3], a.evidenceHash) || !sameHex(stored[4], a.engineer) ||
-          element[0] !== projectId || lot[0] !== projectId || (lot[8] !== 2 && lot[8] !== 3) || a.usedQuantity <= 0n) {
+          element[0] !== projectId || lot[0] !== projectId || (lot[8] !== 2 && lot[8] !== 3) ||
+          a.usedQuantity <= 0n || a.usedQuantity > lot[6] || lot[6] > lot[5] || lot[5] > lot[4]) {
         throw new PassportUnavailable("Assignment does not match the registry state.");
       }
       return { ...a, hash: record.hash, unitCode: lot[7], lotStatus: lot[8] };
     }));
+    return { rows, next: entries.next };
   }
-  async function lot(lotId: bigint) {
+  async function lot(lotId: bigint, cursor?: EventCursor) {
     const [projectId, lotHash, supplier, materialType, declaredQuantity, acceptedQuantity, assignedQuantity, unitCode, status] = await readLot(lotId);
     if (!projectId) return null;
-    const [registered, decisions, labResults] = await Promise.all([
+    const [{ rows: registered }, { rows: decisions }, labResults] = await Promise.all([
       logs("MaterialLotRegistered", { lotId }, (range) =>
         reader.getLogs({ ...query, ...range, event: events.MaterialLotRegistered, args: { lotId } })),
       logs("LotDecisionRecorded", { lotId }, (range) =>
         reader.getLogs({ ...query, ...range, event: events.LotDecisionRecorded, args: { lotId } })),
       logs("TestEvidenceAttached", { lotId }, (range) =>
-        reader.getLogs({ ...query, ...range, event: events.TestEvidenceAttached, args: { lotId } })),
+        reader.getLogs({ ...query, ...range, event: events.TestEvidenceAttached, args: { lotId } }), cursor),
     ]);
     const registration = registered[0]?.args;
     if (registered.length !== 1 || !registration || registration.projectId !== projectId ||
@@ -137,13 +159,18 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
         !sameHex(registration.unitCode, unitCode)) {
       throw new PassportUnavailable("Lot registration does not match the registry state.");
     }
+    if (declaredQuantity <= 0n || assignedQuantity > acceptedQuantity || acceptedQuantity > declaredQuantity ||
+        !(status === 1 || status === 4 ? acceptedQuantity === 0n : status === 2 ? acceptedQuantity === declaredQuantity :
+          status === 3 && acceptedQuantity > 0n && acceptedQuantity < declaredQuantity)) {
+      throw new PassportUnavailable("Lot quantities and inspector status do not agree.");
+    }
     const decisionRecord = decisions[0];
     const decision = decisionRecord?.args;
     if (decisions.length !== (status === 1 ? 0 : 1) || (decision &&
         (decision.projectId !== projectId || decision.decision !== status || decision.acceptedQuantity !== acceptedQuantity))) {
       throw new PassportUnavailable("Lot decision does not match the registry state.");
     }
-    const labEvidence = await Promise.all(labResults.map(async (record) => {
+    const labEvidence = await Promise.all(labResults.rows.map(async (record) => {
       const result = record.args;
       const stored = await reader.readContract({
         address: target.registry, abi: registryAbi, functionName: "labEvidenceRecords", args: [result.testId], blockNumber,
@@ -155,19 +182,22 @@ export async function passportReader({ target, reader, firstBlock }: Configurati
     }));
     return {
       lotId, projectId, lotHash, supplier, materialType, declaredQuantity, acceptedQuantity, assignedQuantity, unitCode, status,
-      registrationHash: registered[0].hash, decision: decision && { ...decision, hash: decisionRecord.hash }, labEvidence,
+      registrationHash: registered[0].hash, decision: decision && { ...decision, hash: decisionRecord.hash }, labEvidence, labNext: labResults.next,
     };
   }
   async function verifySnapshot() {
     const [end, chainId] = await Promise.all([reader.getBlock({ blockNumber }), reader.getChainId()]);
-    if (end.hash !== snapshot.hash || chainId !== target.chainId) {
+    await index?.verifyUnchanged();
+    if (end.hash !== snapshot.hash || end.number !== blockNumber || chainId !== target.chainId) {
       throw new PassportUnavailable("The verified snapshot changed during the request. Retry after the chain settles.");
     }
   }
-  return { blockNumber, projectLogs, projectRoles, projectElements, projectLots, projectDecisions, elementLogs, readElement, readLot, assignments, lot, verifySnapshot };
+  const assignedTotal = (id: bigint, entries: EventPage<{ usedQuantity: bigint }>) => index
+    ? indexedAssigned(index.db, target, blockNumber, id) : entries.rows.reduce((sum, item) => sum + item.usedQuantity, 0n);
+  return { blockNumber, indexLag: index?.lag, assignedTotal, projectLogs, projectRoles, projectElements, projectLots, projectDecisions, elementLogs, readElement, readLot, assignments, lot, verifySnapshot };
 }
 
-export async function loadPassport(coordinates: Coordinates, config: Configuration) {
+export async function loadPassport(coordinates: Coordinates, config: Configuration, pages: { assignments?: EventCursor; lab?: EventCursor } = {}) {
   if (!matchesTarget(coordinates, config.target)) return null;
   const context = await passportReader(config);
   const id = coordinates.id;
@@ -178,10 +208,10 @@ export async function loadPassport(coordinates: Coordinates, config: Configurati
     { kind: "lot"; lot: Lot } | { kind: "element"; elementCodeHash: Hash; elementType: number; creationHash: Hash }
   );
   if (coordinates.kind === "lot") {
-    const lot = await context.lot(id);
+    const lot = await context.lot(id, pages.lab);
     if (!lot) return null;
-    const assignments = await context.assignments({ lotId: id }, lot.projectId);
-    if (assignments.reduce((sum, item) => sum + item.usedQuantity, 0n) !== lot.assignedQuantity) {
+    const assignments = await context.assignments({ lotId: id }, lot.projectId, pages.assignments);
+    if (await context.assignedTotal(id, assignments) !== lot.assignedQuantity) {
       throw new PassportUnavailable("Assignment history does not match total assigned quantity.");
     }
     record = { kind: "lot" as const, projectId: lot.projectId, lot, assignments };
@@ -194,9 +224,10 @@ export async function loadPassport(coordinates: Coordinates, config: Configurati
         !sameHex(fields.elementCodeHash, elementCodeHash) || fields.elementType !== elementType) {
       throw new PassportUnavailable("Element creation does not match the registry state.");
     }
-    const assignments = await context.assignments({ elementId: id }, projectId);
+    const assignments = await context.assignments({ elementId: id }, projectId, pages.assignments);
     record = { kind: "element" as const, projectId, elementCodeHash, elementType, creationHash: created[0].hash, assignments };
   }
   await context.verifySnapshot();
-  return { blockNumber, ...record };
+  const { assignments, ...rest } = record;
+  return { blockNumber, indexLag: context.indexLag, ...rest, assignments: assignments.rows, assignmentNext: assignments.next };
 }

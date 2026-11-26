@@ -1,0 +1,59 @@
+name: pourledger-index
+x-registry: &registry
+  POURLEDGER_CHAIN_ID: '1990'
+  POURLEDGER_REGISTRY: '0xf99C353f1B73aA2DeCa2cb7bbe580eEAa6472e63'
+  POURLEDGER_DEPLOYMENT_BLOCK: '12148098'
+  POURLEDGER_CONFIRMATIONS: ${POURLEDGER_CONFIRMATIONS:?Set the reviewed confirmation depth}
+  POURLEDGER_RPC_URL: ${POURLEDGER_RPC_URL:?Set the approved web verification RPC}
+  POURLEDGER_PUBLIC_ORIGIN: ${POURLEDGER_PUBLIC_ORIGIN:-https://pourledger-one.vercel.app}
+  POURLEDGER_MAINNET_EXPLORER_ORIGIN: https://mainnet.qie.digital
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pourledger
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set the database administrator password}
+    volumes:
+      - registry_index:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD, pg_isready, -U, postgres, -d, pourledger]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+  migrate:
+    profiles: [admin]
+    build: {context: ./apps/web, dockerfile: indexer/Dockerfile, target: runtime}
+    environment:
+      POURLEDGER_INDEX_DATABASE_URL: ${POURLEDGER_INDEX_ADMIN_DATABASE_URL:-}
+    depends_on:
+      db: {condition: service_healthy}
+    command: [npm, run, 'index:migrate']
+  indexer:
+    build: {context: ./apps/web, dockerfile: indexer/Dockerfile, target: runtime}
+    init: true
+    environment:
+      <<: *registry
+      POURLEDGER_INDEX_RPC_URLS: ${POURLEDGER_INDEX_RPC_URLS:?Set two to five independent archive RPC origins}
+      POURLEDGER_INDEX_DATABASE_URL: ${POURLEDGER_INDEX_DATABASE_URL:?Set the index writer DSN}
+      POURLEDGER_INDEX_HEALTH_HOST: 0.0.0.0
+    ports:
+      - '127.0.0.1:7350:7350'
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+    stop_grace_period: 60s
+  web:
+    profiles: [web]
+    build: {context: ./apps/web, dockerfile: indexer/Dockerfile, target: web}
+    init: true
+    environment:
+      <<: *registry
+      POURLEDGER_INDEX_READ_DATABASE_URL: ${POURLEDGER_INDEX_READ_DATABASE_URL:-}
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+volumes:
+  registry_index:

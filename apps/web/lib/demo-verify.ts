@@ -3,7 +3,7 @@ import { anvilChainId, qieMainnetChainId, sameHex } from "./chain.ts";
 import { type DemoProgress, type DemoRun, demoMainnetBlock, demoMainnetRegistry, demoStep, demoSteps, type VerifiedStep } from "./demo-run.ts";
 import { deployment } from "./deployment.ts";
 import { registryAbi } from "./generated/registry.ts";
-import { maxPassportHistoryBlocks } from "./passport.ts";
+import { maxPassportHistoryBlocks, passportReader } from "./passport.ts";
 import { validateReceipt } from "./receipt.ts";
 import { matchesRegistryDomain, matchesRegistryImage } from "./registry-image.ts";
 
@@ -45,9 +45,13 @@ export async function verifyDemo(run: DemoRun, config: Configuration): Promise<D
   async function progress(state: DemoProgress["state"], next?: DemoProgress["next"]): Promise<DemoProgress> {
     const [currentChain, currentBlock] = await Promise.all([reader.getChainId(), reader.getBlock({ blockNumber: snapshotNumber })]);
     if (!snapshot.hash || currentChain !== chainId || currentBlock.hash !== snapshot.hash) throw new Error("The verification snapshot changed. Check again.");
+    const indexed = process.env.POURLEDGER_INDEX_READ_DATABASE_URL;
+    const passportHistoryAvailable = indexed
+      ? await passportReader(config).then(() => true, () => false)
+      : snapshotNumber - firstBlock + 1n <= maxPassportHistoryBlocks;
     return {
       verified, state, next, snapshotBlock: String(snapshotNumber), snapshotHash: snapshot.hash,
-      directPassportHistory: snapshotNumber - firstBlock + 1n <= maxPassportHistoryBlocks,
+      passportHistoryAvailable,
     };
   }
   for (const key of demoSteps(run)) {

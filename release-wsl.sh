@@ -95,13 +95,24 @@ select_verified_rpc "${POURLEDGER_RPC_URL:-}" "$output/mainnet-read.json" ||
 release_stage 'confirmed passport history capacity'
 node --input-type=module - "$output/mainnet-read.json" <<'JS'
 import { readFileSync } from 'node:fs';
-import { maxPassportHistoryBlocks } from './lib/passport.ts';
+import { maxPassportHistoryBlocks, passportReader } from './lib/passport.ts';
+import { deployment } from './lib/deployment.ts';
 const proof = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 if (proof.registryCheck.status !== 'verified') throw new Error('Registry proof is not verified.');
 const history = BigInt(proof.registryCheck.snapshotBlock) - BigInt(proof.ownerDeploymentRecord.deploymentBlock) + 1n;
 console.log('RPC head: ' + proof.registryCheck.head + '; confirmed snapshot: ' + proof.registryCheck.snapshotBlock);
 console.log('Passport history: ' + history + ' / ' + maxPassportHistoryBlocks + ' blocks; remaining: ' + (maxPassportHistoryBlocks - history));
-if (history < 1n || history > maxPassportHistoryBlocks) {
+if (history < 1n) throw new Error('The confirmation snapshot predates the registry.');
+if (process.env.POURLEDGER_INDEX_READ_DATABASE_URL) {
+  try {
+    const source = await passportReader(deployment());
+    await source.verifySnapshot();
+    console.log('Verified indexed history through block ' + source.blockNumber);
+  } catch {
+    console.error('The configured registry index could not be verified. See its worker health and confirmation settings.');
+    process.exitCode = 1;
+  }
+} else if (history > maxPassportHistoryBlocks) {
   const last = BigInt(proof.ownerDeploymentRecord.deploymentBlock) + maxPassportHistoryBlocks - 1n;
   console.error('Direct passport history is outside its verified limit. Last supported confirmed block: ' + last + '. A verified indexer is required.');
   process.exitCode = 1;

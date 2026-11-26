@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import { HistoryNavigation } from "../../../../../../components/HistoryNavigation";
 import { EvidenceFile } from "../../../../../../components/EvidenceFile";
 import { TransactionLink } from "../../../../../../components/TransactionLink";
 import {
   elementTypes, lotStatuses, materialTypes, matchesTarget, networks, parseCoordinates, passportPath, unitLabel,
 } from "../../../../../../lib/chain.ts";
 import { deployment } from "../../../../../../lib/deployment.ts";
+import { parseEventCursor } from "../../../../../../lib/indexer/events.ts";
 import { loadPassport, PassportUnavailable } from "../../../../../../lib/passport.ts";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +22,10 @@ function Unavailable({ reason }: { reason: string }) {
   );
 }
 
-export default async function PassportPage({ params }: { params: Promise<Record<"chain" | "registry" | "kind" | "id", string>> }) {
+export default async function PassportPage({ params, searchParams }: {
+  params: Promise<Record<"chain" | "registry" | "kind" | "id", string>>;
+  searchParams: Promise<{ assignments?: string; lab?: string }>;
+}) {
   const coordinates = parseCoordinates(await params);
   if (!coordinates) notFound();
   let config: ReturnType<typeof deployment>;
@@ -30,14 +35,16 @@ export default async function PassportPage({ params }: { params: Promise<Record<
     return <Unavailable reason="No supported live deployment is configured." />;
   }
   if (!matchesTarget(coordinates, config.target)) notFound();
+  const query = await searchParams;
+  const path = passportPath(coordinates);
   let record: Awaited<ReturnType<typeof loadPassport>>;
   try {
-    record = await loadPassport(coordinates, config);
+    record = await loadPassport(coordinates, config, { assignments: parseEventCursor(query.assignments), lab: parseEventCursor(query.lab) });
   } catch (error) {
     return <Unavailable reason={error instanceof PassportUnavailable ? error.message : "Required registry data or transaction receipts could not be verified. Retry after the RPC is available."} />;
   }
   if (!record) notFound();
-  const qrUrl = config.origin && new URL(passportPath(coordinates), config.origin).toString();
+  const qrUrl = config.origin && new URL(path, config.origin).toString();
   const lot = record.kind === "lot" && record.lot;
   return (
     <main className="live-shell">
@@ -46,6 +53,7 @@ export default async function PassportPage({ params }: { params: Promise<Record<
       <p>{networks[coordinates.chainId].name} · chain {coordinates.chainId}</p>
       <p className="live-mono">{coordinates.registry}</p>
       <p>Receipt-validated through block {record.blockNumber.toString()} · {config.target.confirmations} confirmation(s) required</p>
+      {record.indexLag !== undefined && record.indexLag > 0n && <p>Indexed snapshot · {record.indexLag.toString()} blocks behind the confirmed head.</p>}
       <p>Project {record.projectId.toString()}</p>
       <p className="live-note">The registry records role-bound statements. Physical installation, laboratory accuracy, identity, and structural safety require independent verification.</p>
       {qrUrl ? (
@@ -84,7 +92,7 @@ export default async function PassportPage({ params }: { params: Promise<Record<
           </section>
           <section className="live-panel">
             <h2>Designated-lab attestations</h2>
-            {lot.labEvidence.length === 0 && <p>No lab attestation found through the verified block.</p>}
+            {lot.labEvidence.length === 0 && <p>No lab attestation on this page.</p>}
             {lot.labEvidence.map((entry) => (
               <article key={entry.testId.toString()}>
                 <h3>Lab attestation {entry.testId.toString()}</h3>
@@ -95,12 +103,13 @@ export default async function PassportPage({ params }: { params: Promise<Record<
                 <EvidenceFile expected={entry.resultsHash} />
               </article>
             ))}
+            <HistoryNavigation path={path} query={query} field="lab" next={lot.labNext} label="lab attestations" />
           </section>
         </>
       )}
       <section className="live-panel">
         <h2>Engineer-attested assignments</h2>
-        {record.assignments.length === 0 && <p>No assignments found through the verified block.</p>}
+        {record.assignments.length === 0 && <p>No assignments on this page.</p>}
         {record.assignments.map((entry) => (
           <article key={entry.assignmentId.toString()}>
             <h3>Assignment {entry.assignmentId.toString()}</h3>
@@ -118,6 +127,7 @@ export default async function PassportPage({ params }: { params: Promise<Record<
             <EvidenceFile expected={entry.evidenceHash} />
           </article>
         ))}
+        <HistoryNavigation path={path} query={query} field="assignments" next={record.assignmentNext} label="assignments" />
       </section>
       <p>Document storage is unavailable in this milestone. You can verify files obtained separately.</p>
     </main>

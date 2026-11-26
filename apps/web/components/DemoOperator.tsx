@@ -228,7 +228,7 @@ export function DemoOperator({ target }: { target: RegistryTarget }) {
     const report = await check(current);
     setProgress(report);
     if (report.state !== "ready" || !report.next) throw new Error("Resolve the saved attempt before preparing the next step.");
-    if (!report.directPassportHistory) throw new Error("Public passport history is beyond the direct verification limit.");
+    if (!report.passportHistoryAvailable) throw new Error("Verified public passport history is unavailable.");
     const step = demoStep(current, report.next, report.verified);
     const { clients, checkSession } = await session(step.account);
     const { data } = await prepareAction({ ...step, target, clients, checkSession, onSigned: () => setNotice("Typed data signed. Review the separate registry transaction below.") });
@@ -242,7 +242,7 @@ export function DemoOperator({ target }: { target: RegistryTarget }) {
     const current = read();
     const report = await check(current);
     setProgress(report);
-    if (current.runId !== draft.runId || report.state !== "ready" || report.next !== draft.key || !report.directPassportHistory) {
+    if (current.runId !== draft.runId || report.state !== "ready" || report.next !== draft.key || !report.passportHistoryAvailable) {
       throw new Error("The journal changed. Prepare the current step again.");
     }
     const { clients, checkSession, provider } = await session(draft.account);
@@ -359,17 +359,17 @@ export function DemoOperator({ target }: { target: RegistryTarget }) {
           {!provider && <p>Open this loopback page in the browser profile with Rabby installed.</p>}
           {wallet && wallet.chainId !== target.chainId && <p role="alert">Network mismatch. Switch Rabby to chain {target.chainId}.</p>}
           {!progress && <p role="status">Waiting for independent verification. Automated polling continues every five seconds.</p>}
-          {progress?.directPassportHistory === false && <p role="alert">Public passport history exceeds the direct verification limit. Wallet actions are paused.</p>}
+          {progress?.passportHistoryAvailable === false && <p role="alert">Verified passport history is unavailable. Wallet actions are paused.</p>}
           <button type="button" disabled={busy} onClick={() => void exclusive(async () => { setProgress(await check(read())); })}>Refresh verification</button>
           {next && <><h3>{stepLabels[next.key]}</h3><p className="live-mono">Required sender {next.account}</p></>}
           {progress?.state === "ready" && next && <>
             <details><summary>Review planned fields</summary><dl>{Object.entries(next.expected.fields).map(([field, value]) =>
               <div key={field}><dt>{field}</dt><dd className="live-mono">{String(value)}</dd></div>)}</dl></details>
-            <button type="button" disabled={busy || !rightWallet || !progress.directPassportHistory} onClick={() => void exclusive(prepare)}>
+            <button type="button" disabled={busy || !rightWallet || !progress.passportHistoryAvailable} onClick={() => void exclusive(prepare)}>
               {typeSigning ? "Review and sign typed data in Rabby" : "Prepare transaction"}
             </button>
           </>}
-          {draft && progress?.state === "ready" && progress.directPassportHistory && rightWallet && <section className="operator-review" aria-label="Prepared transaction">
+          {draft && progress?.state === "ready" && progress.passportHistoryAvailable && rightWallet && <section className="operator-review" aria-label="Prepared transaction">
             <p>Nonce {draft.nonce} · Est. gas {draft.gas.toString()} · Indicative gas cost {formatEther(draft.estimatedFee)} {target.chainId === 31337 ? "ETH" : "QIE"} · Zero transfer value</p>
             <details><summary>Review exact calldata</summary><code className="live-mono">{draft.data}</code></details>
             <label className="operator-confirm"><input type="checkbox" checked={approved} onChange={(event) => setApproved(event.target.checked)} />I reviewed the sender, registry, nonce, calldata and indicative fee.</label>

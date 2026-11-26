@@ -1,11 +1,14 @@
 import { zeroAddress } from "viem";
 import { sameHex } from "./chain.ts";
 import type { deployment } from "./deployment.ts";
+import type { EventCursor } from "./indexer/events.ts";
 import { registryAbi } from "./generated/registry.ts";
 import { passportReader, PassportUnavailable } from "./passport.ts";
 
+type ProjectPages = { elements?: EventCursor; lots?: EventCursor; roles?: EventCursor };
+
 export async function loadProjects(
-  config: ReturnType<typeof deployment>, projectId?: bigint, before?: bigint,
+  config: ReturnType<typeof deployment>, projectId?: bigint, before?: bigint, pages: ProjectPages = {},
 ) {
   const source = await passportReader(config);
   const { blockNumber } = source;
@@ -32,22 +35,24 @@ export async function loadProjects(
   let recordsUnavailable = false;
   if (current) {
     try {
-      records = await projectRecords(config, source, current.id);
+      records = await projectRecords(config, source, current.id, pages);
     } catch (error) {
       if (!(error instanceof PassportUnavailable)) throw error;
       recordsUnavailable = true;
     }
   }
   await source.verifySnapshot();
-  return { blockNumber, count, projects, current, records, recordsUnavailable, older: end > 8n ? end - 8n : undefined };
+  return { blockNumber, indexLag: source.indexLag, count, projects, current, records, recordsUnavailable, older: end > 8n ? end - 8n : undefined };
 }
 
 async function projectRecords(
-  config: ReturnType<typeof deployment>, source: Awaited<ReturnType<typeof passportReader>>, id: bigint,
+  config: ReturnType<typeof deployment>, source: Awaited<ReturnType<typeof passportReader>>, id: bigint, pages: ProjectPages,
 ) {
-  const [elementEvents, lotEvents, decisionEvents, roleEvents] = await Promise.all([
-    source.projectElements(id), source.projectLots(id), source.projectDecisions(id), source.projectRoles(id),
+  const [elementPage, lotPage, rolePage] = await Promise.all([
+    source.projectElements(id, pages.elements), source.projectLots(id, pages.lots), source.projectRoles(id, pages.roles),
   ]);
+  const [elementEvents, lotEvents, roleEvents] = [elementPage.rows, lotPage.rows, rolePage.rows];
+  const decisionEvents = await source.projectDecisions(id, lotEvents.map(({ args }) => args.lotId));
   const assertUnique = (ids: bigint[]) => {
     if (new Set(ids).size !== ids.length) throw new PassportUnavailable("Project history returned conflicting events.");
   };
@@ -91,7 +96,7 @@ async function projectRecords(
   if (decisionEvents.some(({ args }) => !lots.some(({ id }) => id === args.lotId))) {
     throw new PassportUnavailable("The RPC could not match inspector decisions to their registrations.");
   }
-  return { elements, lots, roles };
+  return { elements, lots, roles, elementsNext: elementPage.next, lotsNext: lotPage.next, rolesNext: rolePage.next };
 }
 
 export type ProjectsView = Awaited<ReturnType<typeof loadProjects>>;

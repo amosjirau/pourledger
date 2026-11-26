@@ -36,7 +36,7 @@ export type DemoProgress = {
   state: "ready" | "recover" | "pending" | "reverted" | "complete";
   snapshotBlock: string;
   snapshotHash: Hash;
-  directPassportHistory: boolean;
+  passportHistoryAvailable: boolean;
 };
 type Step = { action: ActionName; account: Address; form: FormData; expected: ExpectedEvent; key: StepKey };
 

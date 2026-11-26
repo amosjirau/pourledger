@@ -3,13 +3,14 @@ import { LiveWallet } from "../../components/LiveWallet";
 import { ProjectWorkspace } from "../../components/ProjectWorkspace";
 import { deployment } from "../../lib/deployment.ts";
 import { integer, networks, unitLabel } from "../../lib/chain.ts";
+import { parseEventCursor } from "../../lib/indexer/events.ts";
 import { loadProjects, type ProjectsView } from "../../lib/projects.ts";
 import { PassportUnavailable } from "../../lib/passport.ts";
 
 export const dynamic = "force-dynamic";
 
 export default async function LivePage({ searchParams }: {
-  searchParams: Promise<{ project?: string; before?: string }>;
+  searchParams: Promise<{ project?: string; before?: string; elements?: string; lots?: string; roles?: string }>;
 }) {
   let config: ReturnType<typeof deployment>;
   try {
@@ -30,7 +31,9 @@ export default async function LivePage({ searchParams }: {
   try {
     const project = params.project === undefined ? undefined : integer(params.project);
     const before = params.before === undefined ? undefined : integer(params.before);
-    view = await loadProjects(config, project, before);
+    view = await loadProjects(config, project, before, {
+      elements: parseEventCursor(params.elements), lots: parseEventCursor(params.lots), roles: parseEventCursor(params.roles),
+    });
   } catch (error) {
     readError = error instanceof PassportUnavailable ? error.message : "Check the project ID or retry when the configured verification RPC is available.";
   }
@@ -58,7 +61,7 @@ export default async function LivePage({ searchParams }: {
       </header>
       <div className="workspace-layout">
         <div className="workspace-read">
-          {view ? <ProjectWorkspace target={target} view={view} /> : (
+          {view ? <ProjectWorkspace target={target} view={view} pages={params} /> : (
             <section className="live-panel"><h2>Projects unavailable</h2><p role="status">{readError}</p><a href="/live">Retry projects</a></section>
           )}
           {context && <QualityTools key={context.project} chainId={target.chainId} registry={target.registry} project={context.project} lots={context.lots.filter((lot) => lot.status === 1)} />}

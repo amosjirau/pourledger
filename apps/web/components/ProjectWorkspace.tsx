@@ -3,12 +3,14 @@ import {
   elementTypes, lotStatuses, materialTypes, passportPath, unitLabel, type RegistryTarget,
 } from "../lib/chain.ts";
 import type { ProjectsView } from "../lib/projects.ts";
+import { HistoryNavigation } from "./HistoryNavigation";
 import { TransactionLink } from "./TransactionLink";
 
 const roleNames = ["Unknown role", "Inspector", "Engineer", "Lab"];
 
-export function ProjectWorkspace({ target, view }: { target: RegistryTarget; view: ProjectsView }) {
+export function ProjectWorkspace({ target, view, pages }: { target: RegistryTarget; view: ProjectsView; pages: Record<string, string | undefined> }) {
   const { current, records, blockNumber } = view;
+  const historyQuery = { elements: pages.elements, lots: pages.lots, roles: pages.roles, project: current?.id.toString() };
   const pending = records?.lots.filter((lot) => lot.status === 1) ?? [];
   const assignable = records?.lots.filter((lot) => lot.accepted > lot.assigned) ?? [];
   return (
@@ -16,7 +18,7 @@ export function ProjectWorkspace({ target, view }: { target: RegistryTarget; vie
       <div className="project-heading">
         <div>
           <h2>Projects</h2>
-          <p>Verified through block {blockNumber.toString()}</p>
+          <p>Verified through block {blockNumber.toString()}{view.indexLag !== undefined && view.indexLag > 0n ? ` · ${view.indexLag} blocks behind the confirmed head` : ""}</p>
         </div>
         {view.count > 0n && <form action="/live" className="project-jump">
           <label htmlFor="project-jump">Project ID</label>
@@ -43,7 +45,7 @@ export function ProjectWorkspace({ target, view }: { target: RegistryTarget; vie
             </dl>
             <TransactionLink target={target} hash={current.hash} label="Project receipt" />
           </div>
-          {view.recordsUnavailable && <p role="status">Project history could not be fully verified within the direct read limit. Individual passports remain available by ID.</p>}
+          {view.recordsUnavailable && <p role="status">Project history could not be verified for this view.</p>}
           {records && (
             <>
               <div className="workspace-columns">
@@ -52,14 +54,14 @@ export function ProjectWorkspace({ target, view }: { target: RegistryTarget; vie
                   {pending.length ? <ul>{pending.map((lot) => <li key={lot.id.toString()}>
                     <a href={passportPath({ ...target, kind: "lot", id: lot.id })}>Lot {lot.id.toString()}</a>
                     <span>{lot.declared.toString()} {unitLabel(lot.unit)} declared</span>
-                  </li>)}</ul> : <p>No lots awaiting an inspector.</p>}
+                  </li>)}</ul> : <p>No lots awaiting an inspector in this view.</p>}
                 </section>
                 <section>
                   <h3>Engineer queue</h3>
                   {assignable.length ? <ul>{assignable.map((lot) => <li key={lot.id.toString()}>
                     <a href={passportPath({ ...target, kind: "lot", id: lot.id })}>Lot {lot.id.toString()}</a>
                     <span>{(lot.accepted - lot.assigned).toString()} {unitLabel(lot.unit)} available</span>
-                  </li>)}</ul> : <p>No accepted quantity to assign.</p>}
+                  </li>)}</ul> : <p>No accepted quantity to assign in this view.</p>}
                 </section>
               </div>
               <details open>
@@ -68,14 +70,16 @@ export function ProjectWorkspace({ target, view }: { target: RegistryTarget; vie
                   <a href={passportPath({ ...target, kind: "lot", id: lot.id })}>Lot {lot.id.toString()} · {materialTypes[lot.material]}</a>
                   <span>{lotStatuses[lot.status]}</span>
                   <span>{(lot.accepted - lot.assigned).toString()} {unitLabel(lot.unit)} available · {lot.assigned.toString()} assigned</span>
-                </li>)}</ul> : <p>No supplier declarations yet.</p>}
+                </li>)}</ul> : <p>No supplier declarations in this view.</p>}
+                <HistoryNavigation path="/live" query={historyQuery} field="lots" next={records.lotsNext} label="material lots" />
               </details>
               <details open>
                 <summary>Elements <span>({records.elements.length})</span></summary>
                 {records.elements.length ? <ul>{records.elements.map((element) => <li key={element.id.toString()}>
                   <a href={passportPath({ ...target, kind: "element", id: element.id })}>{elementTypes[element.type] ?? "Element"} {element.id.toString()} passport</a>
                   <span className="live-mono">{element.digest}</span>
-                </li>)}</ul> : <p>No structural elements yet.</p>}
+                </li>)}</ul> : <p>No structural elements in this view.</p>}
+                <HistoryNavigation path="/live" query={historyQuery} field="elements" next={records.elementsNext} label="elements" />
               </details>
               <details open>
                 <summary>Project roles <span>({records.roles.length})</span></summary>
@@ -83,7 +87,9 @@ export function ProjectWorkspace({ target, view }: { target: RegistryTarget; vie
                   <strong>{roleNames[entry.role]} · {entry.enabled ? "Granted" : "Revoked"}</strong>
                   <span className="live-mono">{entry.account}</span>
                   <TransactionLink target={target} hash={entry.hash} label="Role receipt" />
-                </li>)}</ul> : <p>No role grants yet. The supervisor can grant project-scoped roles.</p>}
+                </li>)}</ul> : <p>No role records in this view.</p>}
+                <p className="live-note">Role receipts and known accounts are checked against the selected block. The registry has no on-chain role list.</p>
+                <HistoryNavigation path="/live" query={historyQuery} field="roles" next={records.rolesNext} label="role records" />
               </details>
             </>
           )}
