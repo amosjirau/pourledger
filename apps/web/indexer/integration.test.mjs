@@ -54,7 +54,7 @@ function registryFixture() {
 
   function visible() { return fork ? events.slice(0, -1) : events; }
   const raw = (event) => ({ ...event, blockHash: blockHash(event.blockNumber) });
-  const reader = ({ chain = 1990, fail = false, receiptFails = false, corruptCode = false, omit = "", duplicate = false, max = 2_000n } = {}) => ({
+  const reader = ({ chain = 1990, fail = false, receiptFails = false, corruptCode = false, omit = "", duplicate = false, max = 2_000n, beforeLogs } = {}) => ({
     async getChainId() { if (fail) throw new Error("offline fixture endpoint"); return chain; },
     async getBlockNumber() { return head; },
     async getBlock({ blockNumber }) {
@@ -62,6 +62,7 @@ function registryFixture() {
       return { number: blockNumber, hash: blockHash(blockNumber) };
     },
     async getLogs({ fromBlock, toBlock }) {
+      await beforeLogs?.();
       if (toBlock - fromBlock + 1n > max) throw new Error("fixture endpoint range limit");
       const logs = visible().filter((event) => event.blockNumber >= fromBlock && event.blockNumber <= toBlock && event.name !== omit).map(raw);
       if (duplicate && logs.length) logs.push(logs[0]);
@@ -90,7 +91,7 @@ function registryFixture() {
       }
     },
   });
-  return { reader, early, late, blockHash, get head() { return head; }, reorg() { fork = true; head += 3n; } };
+  return { reader, early, late, blockHash, get head() { return head; }, advance() { head += 1n; }, reorg() { fork = true; head += 3n; } };
 }
 
 test("PostgreSQL backfill, failover, bounded pages and canonical recovery on a simulated QIE history", async (context) => {
@@ -126,7 +127,7 @@ test("PostgreSQL backfill, failover, bounded pages and canonical recovery on a s
   const staleRows = await indexEvents(pool, target, BigInt(interrupted.tip), "LotAssignedToElement", { lotId: 1n });
   await assert.rejects(appendIndexRange(client, scope, interrupted.tip, {
     end_block: String(BigInt(interrupted.tip) + 1n), block_hash: fixture.blockHash(BigInt(interrupted.tip) + 1n), counts: interrupted.counts,
-  }, [staleRows.rows[0]]), { code: "23505" });
+  }, [staleRows.rows[0]], initialHead - 1n), { code: "23505" });
   assert.equal((await indexState(client, scope)).tip, interrupted.tip);
   assert.equal((await recentCheckpoints(client, scope))[0].end_block, interrupted.tip);
   process.env.POURLEDGER_INDEX_READ_DATABASE_URL = url;
@@ -166,6 +167,21 @@ test("PostgreSQL backfill, failover, bounded pages and canonical recovery on a s
   await assert.rejects(passportReader(config), /stale/);
   await indexStatus(client, scope, "ready", BigInt(ready.tip));
   await assert.rejects(passportReader({ ...config, reader: { ...rpc, getBlockNumber: async () => initialHead + 13n } }), /recent/);
+  fixture.advance();
+  const entered = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  const heldPeer = fixture.reader({ beforeLogs() { entered.resolve(); return resume.promise; } });
+  const advancing = syncCycle(client, { target, firstBlock, readers: [rpc, heldPeer] });
+  try {
+    await Promise.race([entered.promise, advancing]);
+    assert.equal((await indexState(pool, scope)).tip, ready.tip);
+    assert.equal((await loadPassport(lot, config)).blockNumber, BigInt(ready.tip));
+  } finally { resume.resolve(); }
+  assert.equal((await advancing).ready, true);
+  const advanced = await indexState(pool, scope);
+  assert.equal(advanced.status, "ready");
+  assert.equal(advanced.tip, String(fixture.head - 1n));
+  assert.equal(advanced.target, advanced.tip);
   fixture.reorg();
   await assert.rejects(passportReader(config), /checkpoint does not match/);
   const synced = await syncCycle(client, { target, firstBlock, readers }, 2_000n);

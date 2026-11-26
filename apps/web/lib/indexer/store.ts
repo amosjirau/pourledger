@@ -49,7 +49,7 @@ async function transaction(db: PoolClient, work: () => Promise<void>) {
 }
 
 export async function appendIndexRange(db: PoolClient, scope: string, previous: string,
-  checkpoint: Checkpoint, events: IndexedEvent[]) {
+  checkpoint: Checkpoint, events: IndexedEvent[], target: bigint) {
   await transaction(db, async () => {
     await db.query("INSERT INTO registry_index.checkpoints VALUES ($1,$2,$3,$4)",
       [scope, checkpoint.end_block, checkpoint.block_hash, checkpoint.counts]);
@@ -67,8 +67,9 @@ export async function appendIndexRange(db: PoolClient, scope: string, previous: 
           name text, topics text[], data text, project_id numeric, lot_id numeric, element_id numeric, entity_id numeric,
           account text, role int, quantity numeric)`, [scope, checkpoint.end_block, JSON.stringify(rows)]);
     }
-    const result = await db.query(`UPDATE registry_index.sync SET tip=$3, tip_hash=$4, counts=$5, checked_at=now()
-      WHERE scope=$1 AND tip=$2`, [scope, previous, checkpoint.end_block, checkpoint.block_hash, checkpoint.counts]);
+    const result = await db.query(`UPDATE registry_index.sync SET tip=$3, tip_hash=$4, counts=$5, target=$6,
+      status=CASE WHEN $3::bigint=$6::bigint THEN 'ready' ELSE 'syncing' END, error=NULL, checked_at=now()
+      WHERE scope=$1 AND tip=$2`, [scope, previous, checkpoint.end_block, checkpoint.block_hash, checkpoint.counts, String(target)]);
     if (result.rowCount !== 1) throw new Error("The indexing checkpoint changed during append.");
   });
 }

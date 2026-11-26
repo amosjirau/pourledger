@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { setTimeout as sleep } from "node:timers/promises";
 import { createPublicClient, http } from "viem";
-import { anvilChainId, qieMainnetChainId, sameHex } from "../lib/chain.ts";
+import { qieMainnetChainId, sameHex } from "../lib/chain.ts";
 import { demoMainnetBlock, demoMainnetRegistry } from "../lib/demo-run.ts";
 import { deployment } from "../lib/deployment.ts";
+import { indexRpcPolicy } from "../lib/indexer/rpc-policy.ts";
 import { indexPool, indexScope, indexState, indexStatus, initializeIndex } from "../lib/indexer/store.ts";
 import { syncCycle } from "../lib/indexer/sync.ts";
 
@@ -24,18 +25,11 @@ async function run() {
   if (target.chainId === qieMainnetChainId && (!sameHex(target.registry, demoMainnetRegistry) || firstBlock !== demoMainnetBlock)) {
     throw new Error("Index configuration does not match the pinned Mainnet registry and deployment block.");
   }
-  const endpoints = (process.env.POURLEDGER_INDEX_RPC_URLS ?? "").split(",").filter(Boolean).map((url) => new URL(url.trim()));
-  if (endpoints.length < 2 || endpoints.length > 5 || new Set(endpoints.map((url) => url.origin)).size !== endpoints.length) {
-    throw new Error("Supply two to five RPCs with distinct origins in POURLEDGER_INDEX_RPC_URLS.");
-  }
-  const readers = endpoints.map((url) => {
-    const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-    if (url.username || url.password || url.hash || (target.chainId === anvilChainId
-      ? !loopback || !["http:", "https:"].includes(url.protocol) : url.protocol !== "https:")) throw new Error("RPC URL transport is invalid.");
-    return createPublicClient({ transport: http(url.href, {
-      timeout: 8_000, retryCount: 0, maxResponseBodySize: 8 * 1024 * 1024, fetchOptions: { redirect: "error" },
-    }), cacheTime: 0 });
-  });
+  const { verificationMode, endpoints } = indexRpcPolicy(target.chainId, process.env.POURLEDGER_INDEX_VERIFICATION_MODE,
+    process.env.POURLEDGER_INDEX_RPC_URLS, process.env.POURLEDGER_INDEX_RPC_OPERATORS);
+  const readers = endpoints.map((url) => createPublicClient({ transport: http(url.href, {
+    timeout: 8_000, retryCount: 0, maxResponseBodySize: 8 * 1024 * 1024, fetchOptions: { redirect: "error" },
+  }), cacheTime: 0 }));
   const scope = indexScope(target);
   const db = await pool.connect();
   let health;
@@ -56,7 +50,7 @@ async function run() {
           const ageMs = state ? Date.now() - state.checked_at.getTime() : null;
           const ready = state?.status === "ready" && lag === "0" && ageMs !== null && ageMs >= -5_000 && ageMs < 120_000;
           response.writeHead(ready ? 200 : 503, { "content-type": "application/json", "cache-control": "no-store" });
-          response.end(JSON.stringify({ ready, scope, status: state?.status, indexedThrough: state?.tip,
+          response.end(JSON.stringify({ ready, scope, verificationMode, status: state?.status, indexedThrough: state?.tip,
             confirmedTarget: state?.target, lagBlocks: lag, lastCheckAgeMs: ageMs, error: state?.error }));
         } catch {
           response.writeHead(503).end("Index database unavailable.");

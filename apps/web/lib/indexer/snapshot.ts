@@ -34,7 +34,7 @@ export async function verifiedIndexSnapshot(target: RegistryTarget, firstBlock: 
     db, blockNumber, checkedHash: block.hash, lag: confirmedHead - blockNumber,
     async verifyUnchanged() {
       const end = await readState();
-      if (!end || end.generation !== state.generation || BigInt(end.tip) < blockNumber || end.status === "error") {
+      if (!end || end.generation !== state.generation || BigInt(end.tip) < blockNumber || end.status !== "ready") {
         throw new Error("Registry index changed during verification. Retry the request.");
       }
     },

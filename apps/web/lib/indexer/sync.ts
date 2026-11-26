@@ -166,7 +166,8 @@ export async function syncCycle(db: PoolClient, config: { target: RegistryTarget
     await indexStatus(db, scope, "ready", confirmed);
     return { ready: true, range };
   }
-  await indexStatus(db, scope, "syncing", confirmed);
+  // Keep serving the last committed checkpoint while verifying the next normal range.
+  if (state.status !== "ready") await indexStatus(db, scope, "syncing", confirmed);
   for (let tried = 0; tried < 12; tried++) {
     const end = start + range - 1n < confirmed ? start + range - 1n : confirmed;
     let result: Awaited<ReturnType<typeof verifyRange>>;
@@ -177,9 +178,8 @@ export async function syncCycle(db: PoolClient, config: { target: RegistryTarget
       range = range / 2n || 1n;
       continue;
     }
-    await appendIndexRange(db, scope, state.tip, result.checkpoint, result.events);
+    await appendIndexRange(db, scope, state.tip, result.checkpoint, result.events, confirmed);
     const ready = end === confirmed;
-    if (ready) await indexStatus(db, scope, "ready", confirmed);
     return { ready, range: range * 2n < maxRange ? range * 2n : maxRange };
   }
   throw new Error("The adaptive registry scan exhausted its range attempts.");
