@@ -22,6 +22,22 @@ Use Docker Engine with the Compose plugin. Copy `apps/web/indexer/deploy.env.exa
 
 Use `?sslmode=verify-full` and a trusted CA for database connections across hosts. Keep the database and worker health endpoint private. Use a private network or access-controlled tunnel for a separately hosted web process.
 
+### Vercel through the Oracle VPS SSH listener
+
+Use a dedicated unprivileged SSH account with a root-owned authorized-key file. Restrict that key to local forwarding to `127.0.0.1:5432`, disable shell execution and all other forwarding, and keep the existing host firewall and PostgreSQL loopback binding. Give the preview only the database reader's credentials. Set a connection limit for the database reader and keep server-side query and page limits in place.
+
+Scope these settings to the intended Preview branch (or to a separate Preview project). Keep the SSH private key and read-only DSN as encrypted server environment settings. Use a separate key for a later production rollout.
+
+| Setting | Preview value |
+| --- | --- |
+| `POURLEDGER_INDEX_READ_DATABASE_URL` | PostgreSQL reader URI using `127.0.0.1:5432`, with no query parameters |
+| `POURLEDGER_DB_SSH_HOST`, `POURLEDGER_DB_SSH_PORT`, `POURLEDGER_DB_SSH_USER` | VPS address, SSH port (defaults to 22), and restricted SSH account |
+| `POURLEDGER_DB_SSH_KEY` | Base64 of the dedicated OpenSSH private key |
+| `POURLEDGER_DB_SSH_HOST_KEY` | Pinned `SHA256:…` fingerprint of the server's Ed25519 host key, taken from the server itself |
+| `POURLEDGER_DB_TLS_CA`, `POURLEDGER_DB_TLS_NAME` | Base64 of PostgreSQL's CA certificate (or its pinned self-signed certificate), and its TLS DNS name |
+
+The Node renderer verifies the SSH host key and authenticates PostgreSQL separately with TLS certificate and name validation. The tunnel adds no public HTTP query endpoint or PostgreSQL listener. Preview protection remains enabled. A broken configured connection fails closed. After key or TLS rotation, publish a fresh preview and deliberately test authentication and both passports before retiring the old pin or key.
+
 The following commands assume the env file is `/srv/pourledger/index.env` and are run from the repository root. Start the database and apply the migration:
 
 ```bash

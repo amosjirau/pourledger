@@ -1,4 +1,5 @@
 import pg, { type PoolClient, type Pool } from "pg";
+import type { ConnectionOptions } from "node:tls";
 import type { Address, Hash } from "viem";
 import type { RegistryTarget } from "../chain.ts";
 import { type Counts, emptyCounts, type EventCursor, eventIdentity, type EventName, type EventPage, type EventRow, type IndexedEvent, restoreEvent } from "./events.ts";
@@ -13,9 +14,9 @@ const columns = { projectId: "project_id", lotId: "lot_id", elementId: "element_
 const pageSize = 16;
 export const indexScope = (target: RegistryTarget) => `${target.chainId}:${target.registry.toLowerCase()}`;
 
-export function indexPool(url: string, max = 4) {
+export function indexPool(url: string, max = 4, ssl?: ConnectionOptions) {
   const pool = new pg.Pool({ connectionString: url, max, connectionTimeoutMillis: 4_000,
-    idleTimeoutMillis: 15_000, statement_timeout: 12_000, lock_timeout: 4_000, allowExitOnIdle: true });
+    idleTimeoutMillis: 15_000, statement_timeout: 12_000, lock_timeout: 4_000, allowExitOnIdle: true, ssl });
   pool.on("error", () => { console.error("Registry index database connection failed."); });
   return pool;
 }

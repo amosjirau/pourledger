@@ -1,18 +1,15 @@
-import type { Pool } from "pg";
 import { sameHex, type RegistryTarget } from "../chain.ts";
 import { countNames } from "./events.ts";
-import { indexPool, indexScope, indexState } from "./store.ts";
+import { indexReadConfigured, indexReadPool } from "./read-pool.ts";
+import { indexScope, indexState } from "./store.ts";
 import { chainCounts, type Reader } from "./sync.ts";
 
-let pool: Pool | undefined;
 export const indexMaxLag = 12n;
 const maxAgeMs = 120_000;
 
 export async function verifiedIndexSnapshot(target: RegistryTarget, firstBlock: bigint, confirmedHead: bigint, reader: Reader) {
-  const url = process.env.POURLEDGER_INDEX_READ_DATABASE_URL;
-  if (!url) return undefined;
-  pool ??= indexPool(url);
-  const db = pool;
+  if (!indexReadConfigured()) return undefined;
+  const db = await indexReadPool();
   const scope = indexScope(target);
   const readState = () => indexState(db, scope).catch(() => { throw new Error("Registry index is unavailable."); });
   const state = await readState();
