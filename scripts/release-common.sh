@@ -11,7 +11,7 @@ retry_read() {
   return 1
 }
 select_verified_rpc() {
-  local preferred=$1 proof=$2 rpc attempt prior candidate duplicate
+  local preferred=$1 proof=$2 rpc attempt prior candidate duplicate label
   local -a candidates=() seen=()
   if [[ -n $preferred ]]; then candidates+=("$preferred"); fi
   for candidate in 2 1 3 4 5; do candidates+=("https://rpc${candidate}mainnet.qie.digital/"); done
@@ -21,12 +21,14 @@ select_verified_rpc() {
     for prior in "${seen[@]}"; do [[ $prior != "$rpc" ]] || duplicate=1; done
     (( duplicate == 0 )) || continue
     seen+=("$rpc")
+    label='configured endpoint'
+    if [[ $rpc =~ ^https://(rpc[1-5]mainnet\.qie\.digital)/$ ]]; then label=${BASH_REMATCH[1]}; fi
     for attempt in 1 2; do
-      printf 'Full registry verification: endpoint %s, attempt %s/2\n' "${#seen[@]}" "$attempt" >&2
+      printf 'Full registry verification: %s (endpoint %s, attempt %s/2)\n' "$label" "${#seen[@]}" "$attempt" >&2
       if POURLEDGER_MAINNET_READ_RPC="$rpc" npm run --silent release:mainnet -- --verify > "$proof"; then
         if node -e 'const p=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));if(p.registryCheck?.status!=="verified"||p.registryCheck.observedChainId!==1990)process.exit(1)' "$proof"; then
           POURLEDGER_RPC_URL=$rpc; export POURLEDGER_RPC_URL
-          printf 'Full registry verification passed (endpoint %s).\n' "${#seen[@]}" >&2
+          printf 'Full registry verification passed on %s.\n' "$label" >&2
           return 0
         fi
       fi

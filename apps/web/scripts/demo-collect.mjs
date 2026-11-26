@@ -27,7 +27,9 @@ export async function collectDemo(journal, config, output, chromiumPath) {
   const evidence = demoEvidence(run);
   if (!origin) throw new Error("Set a passport origin before collecting screenshots.");
   await mkdir(output, { recursive: false });
-  const browser = await chromium.launch({ executablePath: chromiumPath, headless: true });
+  const browser = await chromium.launch({ executablePath: chromiumPath, headless: true }).catch(() => {
+    throw new Error("Chromium could not start. Install Playwright Chromium or set PLAYWRIGHT_CHROMIUM_PATH to a working executable.");
+  });
   try {
     for (const [kind, id] of coordinates) {
       const url = origin + passportPath({ ...config.target, kind, id: BigInt(id) });
@@ -36,16 +38,19 @@ export async function collectDemo(journal, config, output, chromiumPath) {
       let reason;
       for (const [device, width, height] of viewports) {
         const page = await browser.newPage({ viewport: { width, height }, serviceWorkers: "block" });
-        page.setDefaultTimeout(8_000);
+        page.setDefaultTimeout(25_000);
+        page.setDefaultNavigationTimeout(45_000);
         try {
           await page.route("**/*", (route) => {
             const request = route.request();
             return new URL(request.url()).origin === origin && ["GET", "HEAD"].includes(request.method()) ? route.continue() : route.abort();
           });
-          const response = await page.goto(url, { timeout: 20_000 });
-          assert.equal(response?.status(), 200);
-          assert.equal(page.url(), url);
-          await page.getByRole("heading", { name: kind === "element" ? `Structural element ${id}` : `Material lot ${id}`, exact: true }).waitFor();
+          const response = await page.goto(url, { waitUntil: "domcontentloaded" });
+          if (response?.status() !== 200 || page.url() !== url) throw new Error(`Expected the public passport at ${url}, received HTTP ${response?.status() ?? "unavailable"} at ${page.url()}.`);
+          const heading = page.getByRole("heading", { name: kind === "element" ? `Structural element ${id}` : `Material lot ${id}`, exact: true });
+          const unavailable = page.getByRole("heading", { name: "Passport verification unavailable" });
+          await heading.or(unavailable).first().waitFor();
+          if (await unavailable.isVisible()) throw new Error(await page.getByRole("status").textContent() || "Public passport verification is unavailable.");
           await page.getByText(`Project ${proof("project").id}`, { exact: true }).waitFor();
           await page.getByText(new RegExp(`chain ${config.target.chainId}$`)).waitFor();
           await page.getByText(new RegExp(`^${config.target.registry}$`, "i")).waitFor();
@@ -68,6 +73,7 @@ export async function collectDemo(journal, config, output, chromiumPath) {
           captures.push({ filename: `synthetic-${kind}-${device}.png`, bytes: await page.screenshot({ fullPage: true }) });
         } catch (error) {
           reason = `${device}: ${error instanceof Error ? error.message.split("\n")[0] : "verification failed"}`;
+          console.error(`Could not verify the ${kind} passport on ${reason} Check the public URL, Vercel RPC, and confirmation history.`);
           captures.length = 0;
           break;
         } finally {
@@ -116,7 +122,7 @@ if (process.argv[1] && import.meta.url === new URL(process.argv[1], "file:").hre
     const result = await collectDemo(JSON.parse(file), demoConfiguration(), output, process.env.PLAYWRIGHT_CHROMIUM_PATH);
     console.log(`Verified ${result.transactions.length} receipts. Evidence manifest written to ${join(output, "manifest.json")}.`);
     if (result.passports.some((item) => item.status === "unverified")) {
-      console.error("Public passport capture is incomplete. The manifest reports the failed checks.");
+      console.error("Public passport capture is incomplete. The manifest reports the failed checks. Rerun with the saved journal once the public routes verify.");
       process.exitCode = 1;
     }
   } catch (error) {

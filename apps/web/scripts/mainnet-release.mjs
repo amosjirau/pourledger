@@ -49,24 +49,34 @@ if (process.env.POURLEDGER_REVIEWED_SUPERVISOR) {
 }
 
 async function checked(label, operation) {
-  try { return await operation(); }
-  catch (error) {
-    const name = typeof error?.name === 'string' && /^[A-Za-z0-9_]{1,80}$/.test(error.name) ? error.name : 'Error';
-    const status = error?.status ?? error?.cause?.status;
-    throw new ReleaseCheckError(`${label} failed (${name}${Number.isInteger(status) ? `, HTTP ${status}` : ''}). Check endpoint connectivity and historical RPC support.`);
+  try {
+    return await operation();
+  } catch (error) {
+    const name = typeof error?.name === "string" && /^[A-Za-z0-9_]{1,80}$/.test(error.name) ? error.name : "Error";
+    let detail = name;
+    // Provider error text can include an authenticated URL. Report only known fields.
+    for (let cause = error, depth = 0; cause && depth < 8; cause = cause.cause, depth++) {
+      if (Number.isInteger(cause.status) && cause.status >= 400 && cause.status <= 599) {
+        detail = `HTTP ${cause.status}`;
+        break;
+      }
+      if (cause.name === "TimeoutError" || cause.name === "AbortError") detail = "request timed out";
+      if (Number.isInteger(cause.code) && cause.code < 0) detail = `JSON-RPC error ${cause.code}`;
+    }
+    throw new ReleaseCheckError(`${label} failed (${detail}). Check endpoint connectivity and historical RPC support.`);
   }
 }
 
 async function checkRegistry(reader, target) {
-  const observedChainId = await checked('eth_chainId', () => reader.getChainId());
+  const observedChainId = await checked("eth_chainId", () => reader.getChainId());
   if (observedChainId !== chainId) throw new ReleaseCheckError(`RPC returned chain ${observedChainId}, expected ${chainId}.`);
   const [receipt, transaction, block, head] = await Promise.all([
-    checked('deployment receipt', () => reader.getTransactionReceipt({ hash: transactionHash })), 
-    checked('deployment transaction', () => reader.getTransaction({ hash: transactionHash })), 
-    checked('canonical deployment block', () => reader.getBlock({ blockNumber: deploymentBlock })), 
-    checked('current block number', () => reader.getBlockNumber()),
+    checked("deployment receipt", () => reader.getTransactionReceipt({ hash: transactionHash })),
+    checked("deployment transaction", () => reader.getTransaction({ hash: transactionHash })),
+    checked("canonical deployment block", () => reader.getBlock({ blockNumber: deploymentBlock })),
+    checked("current block number", () => reader.getBlockNumber()),
   ]);
-  if (receipt.status !== "success" || receipt.transactionHash !== transactionHash ||
+  if (!block.hash || receipt.status !== "success" || receipt.transactionHash !== transactionHash ||
       !receipt.contractAddress || !sameHex(receipt.contractAddress, registry) ||
       receipt.blockNumber !== deploymentBlock || receipt.blockHash !== block.hash ||
       transaction.hash !== transactionHash || transaction.blockNumber !== deploymentBlock ||
@@ -76,30 +86,39 @@ async function checkRegistry(reader, target) {
   }
   const snapshotBlock = head - BigInt(target.confirmations - 1);
   if (snapshotBlock < deploymentBlock) throw new ReleaseCheckError("The deployment has not reached the requested confirmation depth.");
+  const historical = { address: registry, abi: registryAbi, blockNumber: deploymentBlock };
   const read = { address: registry, abi: registryAbi, blockNumber: snapshotBlock };
-  const [snapshot, code, domain, counts] = await Promise.all([
-    checked('confirmed snapshot block', () => reader.getBlock({ blockNumber: snapshotBlock })), 
-    checked('historical runtime bytecode', () => reader.getCode({ address: registry, blockNumber: snapshotBlock })), 
-    checked("historical signing domain", () => reader.readContract({ ...read, functionName: "domainSeparatorV4" })),
+  const [snapshot, historicCode, historicDomain, historicProjectCount, code, domain, counts] = await Promise.all([
+    checked("confirmed snapshot block", () => reader.getBlock({ blockNumber: snapshotBlock })),
+    checked(`runtime bytecode at deployment block ${deploymentBlock}`, () => reader.getCode({ address: registry, blockNumber: deploymentBlock })),
+    checked(`signing domain at deployment block ${deploymentBlock}`, () => reader.readContract({ ...historical, functionName: "domainSeparatorV4" })),
+    checked(`projectCount at deployment block ${deploymentBlock}`, () => reader.readContract({ ...historical, functionName: "projectCount" })),
+    checked("confirmed runtime bytecode", () => reader.getCode({ address: registry, blockNumber: snapshotBlock })),
+    checked("confirmed signing domain", () => reader.readContract({ ...read, functionName: "domainSeparatorV4" })),
     Promise.all(countFunctions.map(async (functionName) => [
-      functionName, await checked(`historical ${functionName}`, () => reader.readContract({ ...read, functionName })),
+      functionName, await checked(`confirmed ${functionName}`, () => reader.readContract({ ...read, functionName })),
     ])),
   ]);
-  if (!matchesRegistryImage(code) || !matchesRegistryDomain(domain, target)) {
+  if (!matchesRegistryImage(historicCode) || !matchesRegistryDomain(historicDomain, target)) {
+    throw new ReleaseCheckError("The deployment-block runtime or EIP-712 domain differs from the compiled registry.");
+  }
+  if (!matchesRegistryImage(code) || !matchesRegistryDomain(domain, target) || !sameHex(code, historicCode)) {
     throw new ReleaseCheckError("The confirmation snapshot runtime or EIP-712 domain differs from the compiled registry.");
   }
+  const counters = Object.fromEntries(counts);
+  if (historicProjectCount > counters.projectCount) throw new ReleaseCheckError("The confirmed project count is below the historical project count.");
   const [chainAfter, snapshotAfter, creationAfter] = await Promise.all([
-    checked('chain recheck', () => reader.getChainId()),
-    checked('canonical snapshot recheck', () => reader.getBlock({ blockNumber: snapshotBlock })), 
-    checked('canonical deployment recheck', () => reader.getBlock({ blockNumber: deploymentBlock })), 
+    checked("chain recheck", () => reader.getChainId()),
+    checked("canonical snapshot recheck", () => reader.getBlock({ blockNumber: snapshotBlock })),
+    checked("canonical deployment recheck", () => reader.getBlock({ blockNumber: deploymentBlock })),
   ]);
-  if (chainAfter !== observedChainId || snapshotAfter.hash !== snapshot.hash || creationAfter.hash !== block.hash) {
+  if (!snapshot.hash || chainAfter !== observedChainId || snapshotAfter.hash !== snapshot.hash || creationAfter.hash !== block.hash) {
     throw new ReleaseCheckError("The chain or canonical blocks changed during verification.");
   }
   return {
     status: "verified", observedChainId, canonicalDeploymentBlockHash: block.hash,
     head, snapshotBlock, snapshotBlockHash: snapshot.hash, confirmationDepth: target.confirmations,
-    runtimeHash: keccak256(code), domainSeparator: domain, counts: Object.fromEntries(counts),
+    runtimeHash: keccak256(code), domainSeparator: domain, counts: counters, historicProjectCount,
   };
 }
 
@@ -115,7 +134,7 @@ if (verify) {
     if (!confirmationValue) throw new ReleaseCheckError("Set POURLEDGER_CONFIRMATIONS to the reviewed depth.");
     const confirmations = Number(integer(confirmationValue, 10_000n));
     const target = { chainId, registry, confirmations, explorerOrigin };
-    const reader = createPublicClient({ transport: http(rpc.href, { timeout: 8_000, retryCount: 0 }), cacheTime: 0 });
+    const reader = createPublicClient({ transport: http(rpc.href, { timeout: 8_000, retryCount: 0, fetchOptions: { redirect: "error" } }), cacheTime: 0 });
     manifest.registryCheck = await checkRegistry(reader, target);
     for (const [kind, value] of [["lot", process.env.POURLEDGER_APPROVED_LOT_ID], ["element", process.env.POURLEDGER_APPROVED_ELEMENT_ID]]) {
       if (!value) continue;
@@ -128,10 +147,11 @@ if (verify) {
           : { path, status: "record-missing" });
         if (!passport) process.exitCode = 1;
       } catch (error) {
+        const reason = error instanceof PassportUnavailable ? error.message : "Read-only passport RPC failed.";
         manifest.passportChecks.push({
-          path, status: "unverified",
-          reason: error instanceof PassportUnavailable ? error.message : "Read-only passport RPC failed.",
+          path, status: "unverified", reason,
         });
+        console.error(`${path}: ${reason}`);
         process.exitCode = 1;
       }
     }
