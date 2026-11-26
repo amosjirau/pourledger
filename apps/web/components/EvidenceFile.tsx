@@ -1,16 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { hashEvidence, verifyEvidence } from "../lib/evidence.ts";
 
 export function EvidenceFile({ expected, onHash }: { expected?: string; onHash?: (hash: string) => void }) {
   const [status, setStatus] = useState("");
+  const [ready, setReady] = useState(false);
   const selection = useRef(0);
+  useEffect(() => { setReady(true); }, []);
   return (
     <div className="live-file">
       <label>
         {expected ? "Verify a file by its digest" : "Compute a digest from a local file"}
-        <input type="file" onChange={async (event) => {
+        <input type="file" disabled={!ready} onChange={async (event) => {
           const current = ++selection.current;
           const file = event.currentTarget.files?.[0];
           setStatus(file ? "Checking file bytes…" : "");

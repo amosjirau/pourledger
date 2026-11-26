@@ -14,6 +14,26 @@ const sourceCommit = () => execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: new URL("../../../", import.meta.url), encoding: "utf8",
 }).trim();
 
+export async function verifyPresentedFile(section, file, bytes) {
+  const input = section.locator('input[type="file"]:enabled');
+  await input.waitFor({ state: "visible" });
+  const outcome = section.getByText(/^Digest (matches|mismatch)/);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await input.setInputFiles([]);
+    await outcome.waitFor({ state: "hidden", timeout: 4_000 });
+    await input.setInputFiles({ name: file, mimeType: "text/plain", buffer: Buffer.from(bytes) });
+    try {
+      await outcome.waitFor({ timeout: 4_000 });
+    } catch (error) {
+      if (!(error instanceof Error) || error.name !== "TimeoutError") throw error;
+      continue;
+    }
+    if (await outcome.textContent() !== "Digest matches the recorded bytes.") throw new Error("The evidence digest mismatched the on-chain record.");
+    return;
+  }
+  throw new Error("The ready evidence field did not verify the file after three attempts.");
+}
+
 export async function collectDemo(journal, config, output, chromiumPath) {
   const run = parseDemoRun(journal, config.target);
   const confirmed = await verifyDemo(run, config);
@@ -64,8 +84,7 @@ export async function collectDemo(journal, config, output, chromiumPath) {
               ? page.getByRole("article").filter({ has: page.getByRole("heading", { name: `Lab attestation ${proof("lab").id}`, exact: true }) })
               : page.locator(".live-panel").filter({ has: page.getByRole("heading", { name: "Delivery decision", exact: true }) });
             const file = run.accounts.lab ? "lab.txt" : "inspection.txt";
-            await section.locator('input[type="file"]').setInputFiles({ name: file, mimeType: "text/plain", buffer: Buffer.from(evidence[file]) });
-            await page.getByText("Digest matches the recorded bytes.").waitFor();
+            await verifyPresentedFile(section, file, evidence[file]);
           }
           const qr = PNG.sync.read(await page.locator(".live-qr svg").screenshot());
           assert.equal(jsQR(new Uint8ClampedArray(qr.data), qr.width, qr.height)?.data, url);

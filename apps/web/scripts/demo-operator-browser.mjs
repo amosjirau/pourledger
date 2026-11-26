@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectDemo } from "./demo-collect.mjs";
 
-export async function exerciseDemoOperator({ origin, browser, request, accounts, captureDir, config, chromiumPath }) {
+export async function exerciseDemoOperator({ origin, browser, request, accounts, captureDir, prepareCapture, chromiumPath }) {
   const [supervisor, supplier, inspector, engineer, lab] = accounts;
   const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1240, height: 880 } });
   const page = await context.newPage();
@@ -182,7 +182,7 @@ export async function exerciseDemoOperator({ origin, browser, request, accounts,
 
   const parent = captureDir ?? await mkdtemp(join(tmpdir(), "pourledger-operator-"));
   const output = join(parent, "synthetic-local-evidence");
-  const manifest = await collectDemo(run, config, output, chromiumPath);
+  const manifest = await collectDemo(run, await prepareCapture(), output, chromiumPath);
   assert.equal(manifest.scope, "synthetic-local-anvil");
   assert.equal(manifest.submissionReady, false);
   assert.equal(manifest.transactions.length, includeLab ? 9 : 7);

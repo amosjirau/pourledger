@@ -11,6 +11,7 @@ import jsQR from "jsqr";
 import { PNG } from "pngjs";
 import { startRecording } from "./demo-media.mjs";
 import { exerciseDemoOperator } from "./demo-operator-browser.mjs";
+import { verifyPresentedFile } from "./demo-collect.mjs";
 import { demoConfiguration } from "../lib/demo-verify.ts";
 
 const chainId = 31337;
@@ -126,8 +127,30 @@ async function run() {
   if (operator) {
     Object.assign(process.env, settings);
     if (captureDir) await mkdir(captureDir, { recursive: true });
+    async function prepareIndexedCapture() {
+      if (!process.argv.includes("--indexed")) return demoConfiguration();
+      const database = process.env.POURLEDGER_INDEX_TEST_DATABASE_URL;
+      assert.ok(database && ["127.0.0.1", "localhost", "[::1]"].includes(new URL(database).hostname), "Use a disposable loopback index database.");
+      const indexedPort = await port();
+      const healthPort = await port();
+      const indexedOrigin = `http://127.0.0.1:${indexedPort}`;
+      const indexedSettings = { ...settings, POURLEDGER_PUBLIC_ORIGIN: indexedOrigin, POURLEDGER_INDEX_READ_DATABASE_URL: database };
+      const workerEnv = { ...process.env, ...indexedSettings, POURLEDGER_INDEX_DATABASE_URL: database,
+        POURLEDGER_INDEX_RPC_URLS: `${rpc},http://localhost:${anvilPort}/`, POURLEDGER_INDEX_HEALTH_PORT: String(healthPort) };
+      await promisify(execFile)(process.execPath, ["indexer/worker.mjs", "migrate"], { env: workerEnv, timeout: 25_000 });
+      await promisify(execFile)(process.execPath, ["indexer/worker.mjs", "backfill"], { env: workerEnv, timeout: 25_000 });
+      const worker = start(process.execPath, ["indexer/worker.mjs", "worker"], workerEnv);
+      await waitFor(async () => (await fetch(`http://127.0.0.1:${healthPort}/healthz`, { signal: AbortSignal.timeout(2_000) })).ok, worker);
+      const indexedServer = start(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(indexedPort)], {
+        ...process.env, ...indexedSettings,
+      });
+      await waitFor(async () => (await fetch(`${indexedOrigin}/live`, { signal: AbortSignal.timeout(2_000) })).ok, indexedServer);
+      Object.assign(process.env, indexedSettings);
+      console.log("The Anvil index caught up in PostgreSQL and the worker health endpoint is ready.");
+      return demoConfiguration();
+    }
     await exerciseDemoOperator({
-      origin, browser, request, accounts: [supervisor, supplier, inspector, engineer, lab], captureDir, config: demoConfiguration(), chromiumPath,
+      origin, browser, request, accounts: [supervisor, supplier, inspector, engineer, lab], captureDir, prepareCapture: prepareIndexedCapture, chromiumPath,
     });
     return;
   }
@@ -331,11 +354,9 @@ async function run() {
   const png = PNG.sync.read(await verifier.locator(".live-qr svg").screenshot());
   const decodedQr = jsQR(new Uint8ClampedArray(png.data), png.width, png.height);
   assert.equal(decodedQr?.data, origin + path("lot", 1));
-  const labFile = verifier.locator("article").filter({ has: verifier.getByRole("heading", { name: "Lab attestation 1" }) }).locator('input[type="file"]');
-  await labFile.setInputFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("results bytes") });
-  await verifier.getByText("Digest matches the recorded bytes.").waitFor();
-  await labFile.setInputFiles({ name: "local.txt", mimeType: "text/plain", buffer: Buffer.from("altered bytes") });
-  await verifier.getByText("Digest mismatch. These bytes differ from the recorded evidence.").waitFor();
+  const labEntry = verifier.locator("article").filter({ has: verifier.getByRole("heading", { name: "Lab attestation 1" }) });
+  await verifyPresentedFile(labEntry, "local.txt", "results bytes");
+  await assert.rejects(verifyPresentedFile(labEntry, "local.txt", "altered bytes"), /evidence digest mismatched/);
   if (captureDir) await verifier.screenshot({ path: join(captureDir, "lot-mobile.png"), fullPage: true });
   await verifier.goto(origin + path("lot", 2));
   await verifier.getByText("Rejected by designated inspector", { exact: true }).waitFor();
