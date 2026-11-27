@@ -38,7 +38,10 @@ try {
       const response = await page.goto(new URL(path, url).href, { waitUntil: "domcontentloaded", timeout: 50_000 });
       assert.equal(response.status(), 200);
       assert.equal(page.url(), new URL(path, url).href);
-      await page.getByRole("heading", { name: kind === "lot" ? "Material lot 1" : "Structural element 1", exact: true }).waitFor();
+      const verified = page.getByRole("heading", { name: kind === "lot" ? "Material lot 1" : "Structural element 1", exact: true });
+      const unavailable = page.getByRole("heading", { name: "Passport verification unavailable", exact: true });
+      await verified.or(unavailable).waitFor();
+      if (await unavailable.isVisible()) throw new Error(`${kind} ${layout}: ${await page.getByRole("status").textContent()}`);
       await page.getByText("Project 3", { exact: true }).waitFor();
       const snapshot = await page.getByText(/^Receipt-validated through block /).textContent();
       const block = BigInt(snapshot?.match(/^Receipt-validated through block (\d+)/)?.[1] ?? "0");
