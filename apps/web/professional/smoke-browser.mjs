@@ -98,6 +98,7 @@ try {
   await page.getByRole("link",{name:"SYN-BROWSER · Synthetic construction works",exact:true}).click();
   await page.getByRole("link",{name:"Engineering calculations",exact:true}).click();
   await page.locator("select").first().selectOption("concrete");
+  await page.getByLabel("Number of identical elements",{exact:true}).waitFor();
   for (const [index,value] of ["2","3","0.25","2"].entries()) await page.locator(`input[name="value-${index}"]`).fill(value);
   await page.getByRole("button",{name:"Calculate",exact:true}).click();
   await page.getByRole("status").filter({hasText:"3 m³"}).waitFor();

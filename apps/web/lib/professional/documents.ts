@@ -99,17 +99,21 @@ export async function archiveDocument(db: Pool, actor: string, organization: str
 }
 
 export async function downloadDocument(db: Pool, actor: string, organization: string, project: string, document: string, version: number) {
-  return transact(db, async (tx) => {
+  const verified = await transact(db, async (tx) => {
     await requireProject(tx, actor, organization, project);
     const { rows: [record] } = await tx.query<{ file_name: string; media_type: string; bytes: Buffer; sha256: string; keccak: string }>(`
       SELECT file_name,media_type,bytes,sha256,keccak FROM construction.document_revisions
       WHERE organization_id=$1 AND project_id=$2 AND document_id=$3 AND revision=$4`, [organization, project, document, version]);
     if (!record) throw new WorkspaceError("This document revision is unavailable.");
     if (digest(record.bytes) !== record.sha256 || keccak256(record.bytes) !== record.keccak) {
-      throw new WorkspaceError("The stored bytes failed the integrity check.");
+      await tx.query(`INSERT INTO construction.audit(organization_id,project_id,actor,entity_id,action,revision)
+        VALUES ($1,$2,$3,$4,'document.integrity_failed',$5)`,[organization,project,actor,document,version]);
+      return undefined;
     }
     await tx.query(`INSERT INTO construction.audit(organization_id,project_id,actor,entity_id,action,revision)
       VALUES ($1,$2,$3,$4,'document.downloaded',$5)`, [organization, project, actor, document, version]);
     return record;
   });
+  if (!verified) throw new WorkspaceError("The stored bytes failed the integrity check.");
+  return verified;
 }

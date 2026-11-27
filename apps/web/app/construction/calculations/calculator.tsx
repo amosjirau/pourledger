@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { nominalRebarMass } from "../../../lib/construction-quality.ts";
 import { circularArea, rectangularConcreteVolume, requiredBarCount, siValue, specimenStrength, utilization } from "../../../lib/professional/engineering.ts";
 
@@ -21,9 +21,11 @@ type Instrument = keyof typeof instruments;
 
 export function Calculator() {
   const [tool,setTool] = useState<Instrument>("reinforcement");
+  const [ready,setReady] = useState(false);
   const [answer,setAnswer] = useState("");
   const [error,setError] = useState("");
   const current = instruments[tool];
+  useEffect(() => { setReady(true); },[]);
   function run(event:FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAnswer(""); setError("");
@@ -50,7 +52,7 @@ export function Calculator() {
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Check the input values."); }
   }
   return <section className="live-panel">
-    <label>Calculation <select value={tool} onChange={(event) => { setTool(event.target.value as Instrument); setAnswer(""); setError(""); }}>
+    <label>Calculation <select value={tool} disabled={!ready} onChange={(event) => { setTool(event.target.value as Instrument); setAnswer(""); setError(""); }}>
       {Object.entries(instruments).map(([key,value]) => <option key={key} value={key}>{value.title}</option>)}
     </select></label>
     <p>{current.formula}</p>
@@ -60,7 +62,7 @@ export function Calculator() {
       {tool === "strength" && <label>Specimen shape <select name="shape"><option value="cube">Cube</option><option value="cylinder">Cylinder</option></select></label>}
       {tool === "conversion" && ["from","to"].map((field) => <label key={field}>{field === "from" ? "From" : "To"}
         <select name={field}>{unitList.map((unit) => <option key={unit}>{unit}</option>)}</select></label>)}
-      <button type="submit">Calculate</button>
+      <button type="submit" disabled={!ready}>Calculate</button>
     </form>
     {answer && <p role="status">{answer}</p>}{error && <p role="alert">{error}</p>}
   </section>;

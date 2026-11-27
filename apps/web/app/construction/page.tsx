@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { currentAccount, sessionCookie } from "../../lib/professional/accounts.ts";
 import { constructionEnabled, constructionPool } from "../../lib/professional/database.ts";
+import { type Notice, projectInbox } from "../../lib/professional/inbox.ts";
 import { projectFields, projectStatuses, roles, WorkspaceError } from "../../lib/professional/input.ts";
 import { managers, membersFor, organizationsFor, type Project, projectHistory, projectsFor, requireProject } from "../../lib/professional/projects.ts";
 import { WorkspaceForm } from "./workspace-form.tsx";
@@ -80,6 +81,7 @@ export default async function ConstructionPage({ searchParams }: {
   const manager = managers.some((candidate) => candidate === role);
   const members = admin ? await membersFor(db, account.id, organizationId) : [];
   const history = project ? await projectHistory(db, account.id, organizationId, project.id) : [];
+  const notices = project ? await projectInbox(db,account.id,organizationId,project.id) : [];
   return <main className="live-shell">
     <a href="/live">Live registry</a>
     <h1>{organization.name}</h1>
@@ -103,6 +105,9 @@ export default async function ConstructionPage({ searchParams }: {
       <p><a href={`/construction/design?organization=${organizationId}&project=${project.id}`}>Specifications and structural elements</a></p>
       <p><a href={`/construction/quality?organization=${organizationId}&project=${project.id}`}>Quality registers and due work</a></p>
       <p><a href={`/construction/reports?organization=${organizationId}&project=${project.id}`}>Quality reports and handover</a></p>
+      {notices.length > 0 && <><h3>Project inbox</h3><ul>{notices.map((item) => <li key={`${item.source}-${item.target}`}>
+        <a href={noticeLink(item,organizationId,project.id)}>{item.reference} · {item.detail}</a>
+        {item.due && ` · ${item.due}`}</li>)}</ul></>}
       <dl>{Object.entries(project.metadata).filter(([, value]) => value).map(([key, value]) =>
         <div key={key}><dt>{key === "status" ? "Status" : projectFields[key as keyof typeof projectFields]}</dt><dd>{value}</dd></div>)}</dl>
       {manager && <details><summary>Revise project information</summary><ProjectForm organization={organizationId} project={project} /></details>}
@@ -147,6 +152,7 @@ const activity: Record<string,string> = {
   "project.member_removed": "Project access revoked",
   "document.added": "Document added", "document.revised": "Document revised", "document.downloaded": "Document downloaded",
   "document.archived": "Document archived",
+  "document.integrity_failed": "Stored document integrity check failed",
   "delivery.received": "Delivery recorded", "inspection.draft": "Inspection saved as draft", "inspection.submitted": "Inspection submitted",
   "inspection.under_review": "Inspection review started", "inspection.revision_required": "Inspection revision requested",
   "inspection.accepted": "Inspection accepted", "inspection.partially_accepted": "Inspection partially accepted",
@@ -155,3 +161,10 @@ const activity: Record<string,string> = {
   "specification.withdrawn": "Specification revision withdrawn", "element.created": "Structural element registered",
   "element.revised": "Structural element revised",
 };
+
+function noticeLink(notice:Notice, organization:string, project:string) {
+  const base=`organization=${organization}&project=${project}`;
+  if (notice.source === "inspection") return `/construction/receiving?${base}&delivery=${notice.target}`;
+  if (notice.source === "quality") return `/construction/quality?${base}&kind=${notice.target_kind}&record=${notice.target}`;
+  return `/construction/documents?${base}&document=${notice.target}`;
+}

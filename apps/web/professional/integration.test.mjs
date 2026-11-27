@@ -13,6 +13,7 @@ import { quantity, registryQuantity } from "../lib/professional/quantities.ts";
 import { addDelivery, deliveriesFor, deliveryInspection, saveInspection } from "../lib/professional/receiving.ts";
 import { addMovement, stockRegister } from "../lib/professional/stock.ts";
 import { projectReport } from "../lib/professional/report.ts";
+import { projectInbox } from "../lib/professional/inbox.ts";
 import { bindRegistryApproval, bindRegistryDeclaration } from "../lib/professional/registry-approval.ts";
 
 const url = new URL(process.env.POURLEDGER_CONSTRUCTION_TEST_DATABASE_URL ?? "postgres://invalid.invalid");
@@ -178,6 +179,36 @@ test("synthetic onboarding, tenant isolation, document integrity and reviewed ma
   const withQr = await projectReport(db,auditor.id,org,created.id,"elements","");
   assert.ok(withQr.bytes.includes(Buffer.from("/element/1")), "The PDF includes the linked canonical passport.");
   await assert.rejects(projectReport(db,outsider.id,other,created.id,"handover",""),/access/);
+  const wir = await saveQualityRecord(db,owner.id,org,created.id,form({ kind:"wir",operation:"submit",reference:"SYN-WIR",
+    title:"Synthetic pre-pour inspection",element:element.id,location:"Test grid C3",drawing:"S-01",drawing_revision:"P1",stage:"Pre-pour",
+    requested:"2026-11-20",observations:"Checklist recorded against synthetic criteria" }));
+  await assert.rejects(saveQualityRecord(db,consultant.id,org,created.id,form({ kind:"wir",operation:"review",record:wir,
+    revision:"1",assessment:"No actual date supplied" })),/actual inspection date/);
+  const finding = await saveQualityRecord(db,owner.id,org,created.id,form({ kind:"ncr",operation:"submit",reference:"SYN-NCR",
+    title:"Synthetic delivery discrepancy",delivery:delivery.id,description:"Synthetic nonconformance",requirement:"Synthetic reviewed specification",
+    severity:"Test severity",responsible:"Synthetic supplier",containment:"Keep materials separate",action:"Confirm markings",
+    target:"2026-11-25",root_cause:"Synthetic cause",verification:"Synthetic verification recorded" }));
+  assert.ok((await projectInbox(db,auditor.id,org,created.id)).some((notice) => notice.target === finding && notice.detail === "Open nonconformance"));
+  await saveQualityRecord(db,consultant.id,org,created.id,form({ kind:"ncr",operation:"close",record:finding,revision:"1",assessment:"Synthetic closure evidence verified." }));
+  assert.ok(!(await projectInbox(db,auditor.id,org,created.id)).some((notice) => notice.target === finding));
+  const rebar = await saveQualityRecord(db,owner.id,org,created.id,form({ kind:"reinforcement",operation:"submit",reference:"SYN-REBAR",
+    title:"Synthetic reinforcement inspection",delivery:delivery.id,manufacturer:"Synthetic works",heat:"HEAT-1",diameter:"12",grade:"Specified test grade",
+    quantity:"100.125 kg",surface:"Synthetic surface observations",yield:"460",ultimate:"530",evidence_link:`${doc.id}:1` }));
+  assert.equal((await qualityPage(db,owner.id,org,created.id,"reinforcement",undefined,rebar)).entries[0].fields.diameter,"12");
+  await assert.rejects(projectInbox(db,outsider.id,org,created.id),/access/);
+  await assert.rejects(db.query("UPDATE construction.document_revisions SET bytes=bytes WHERE false"),{ code:"42501" });
+  const adminUrl = process.env.POURLEDGER_CONSTRUCTION_TEST_ADMIN_DATABASE_URL;
+  if (adminUrl) {
+    const ownerUrl = new URL(adminUrl);
+    assert.equal(ownerUrl.hostname,url.hostname);
+    assert.equal(ownerUrl.pathname,url.pathname);
+    const management = indexPool(ownerUrl.href,1);
+    try {
+      await management.query("UPDATE construction.document_revisions SET bytes=$2 WHERE document_id=$1",[doc.id,Buffer.from("tampered synthetic fixture")]);
+      await assert.rejects(downloadDocument(db,owner.id,org,created.id,doc.id,1),/integrity/);
+      assert.ok((await projectInbox(db,owner.id,org,created.id)).some((notice) => notice.source === "integrity" && notice.target === doc.id));
+    } finally { await management.end(); }
+  }
   const audit = await db.query("SELECT count(*)::int AS total FROM construction.audit WHERE project_id=$1", [created.id]);
   assert.ok(audit.rows[0].total >= 9);
   await revokeProjectMember(db,owner.id,org,created.id,auditor.id);
