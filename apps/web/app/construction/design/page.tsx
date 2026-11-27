@@ -8,6 +8,8 @@ import { designAuthors, designRegister, designReviewers, type Element, elementFi
   type Specification, specificationClasses, specificationFields } from "../../../lib/professional/design.ts";
 import { id, WorkspaceError } from "../../../lib/professional/input.ts";
 import { requireMember, requireProject } from "../../../lib/professional/projects.ts";
+import { elementStock } from "../../../lib/professional/stock.ts";
+import { formatQuantity, quantity } from "../../../lib/professional/quantities.ts";
 import { WorkspaceForm } from "../workspace-form.tsx";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +28,7 @@ function ElementForm({ organization, project, element }: { organization: string;
 }
 
 export default async function DesignPage({ searchParams }: {
-  searchParams: Promise<{ organization?: string; project?: string; register?: string; after?: string }>;
+  searchParams: Promise<{ organization?: string; project?: string; register?: string; after?: string; element?:string }>;
 }) {
   if (!constructionEnabled()) notFound();
   const db = await constructionPool();
@@ -40,9 +42,10 @@ export default async function DesignPage({ searchParams }: {
     const project = await requireProject(db, account.id, organization, id(query.project));
     const role = await requireMember(db, account.id, organization);
     const list = await designRegister(db, account.id, organization, project.id, register, query.after ? id(query.after) : undefined);
-    view = { organization, project, role, list };
+    const traced = query.element && register === "elements" ? await elementStock(db,account.id,organization,project.id,id(query.element)) : undefined;
+    view = { organization, project, role, list, traced };
   } catch (error) { if (error instanceof WorkspaceError) notFound(); throw error; }
-  const { organization, project, role, list } = view;
+  const { organization, project, role, list, traced } = view;
   const context = `organization=${organization}&project=${project.id}`;
   const current = `/construction/design?${context}&register=${register}`;
   return <main className="live-shell">
@@ -52,6 +55,12 @@ export default async function DesignPage({ searchParams }: {
       <a href={`/construction/design?${context}&register=specifications`}>Specifications</a>
       <a href={`/construction/design?${context}&register=elements`}>Structural elements</a>
     </nav>
+    {traced && <section className="live-panel"><h2>Allocated deliveries</h2>
+      {traced.length === 0 && <p>No warehouse allocations were recorded for this element.</p>}
+      <ul>{traced.map((entry) => <li key={entry.delivery_id}>
+        <a href={`/construction/receiving?${context}&delivery=${entry.delivery_id}`}>{entry.reference} · {entry.supplier}</a>
+        {" · "}{formatQuantity(quantity(entry.quantity))} {entry.unit}</li>)}</ul>
+    </section>}
     <section className="live-panel">
       <h2>{register === "elements" ? "Element register" : "Specification register"}</h2>
       {list.entries.length === 0 && <p>No records have been filed in this register.</p>}
@@ -74,6 +83,7 @@ export default async function DesignPage({ searchParams }: {
           <div key={key}><dt>{elementFields[key as keyof typeof elementFields]}</dt><dd>{value}</dd></div>)}</dl>
         {entry.chain_element_id && <p><a href={demoProductionOrigin + passportPath({ chainId: 1990, registry: demoMainnetRegistry,
           kind: "element", id: BigInt(entry.chain_element_id) })}>Open confirmed registry passport</a></p>}
+        <p><a href={`${current}&element=${entry.id}`}>Trace allocated deliveries</a></p>
         {designAuthors.includes(role) && <details><summary>Revise element</summary><ElementForm organization={organization} project={project.id} element={entry} /></details>}
       </article>)}
       {list.more && <a href={`${current}&after=${list.more}`}>More records</a>}

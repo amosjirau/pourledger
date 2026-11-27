@@ -78,12 +78,13 @@ export default async function ConstructionPage({ searchParams }: {
   }
   const admin = role === "administrator";
   const manager = managers.some((candidate) => candidate === role);
-  const members = admin && project ? await membersFor(db, account.id, organizationId) : [];
+  const members = admin ? await membersFor(db, account.id, organizationId) : [];
   const history = project ? await projectHistory(db, account.id, organizationId, project.id) : [];
   return <main className="live-shell">
     <a href="/live">Live registry</a>
     <h1>{organization.name}</h1>
     <p>{account.name} · {roles[role]}</p>
+    <p><a href="/construction/calculations">Engineering calculations</a></p>
     {organizations.length > 1 && <nav aria-label="Organizations">
       <ul>{organizations.map((entry) => <li key={entry.id}><a href={workspace(entry.id)}>{entry.name}</a></li>)}</ul>
     </nav>}
@@ -100,6 +101,7 @@ export default async function ConstructionPage({ searchParams }: {
       <p><a href={`/construction/documents?organization=${organizationId}&project=${project.id}`}>Project documents</a></p>
       <p><a href={`/construction/receiving?organization=${organizationId}&project=${project.id}`}>Material deliveries and inspections</a></p>
       <p><a href={`/construction/design?organization=${organizationId}&project=${project.id}`}>Specifications and structural elements</a></p>
+      <p><a href={`/construction/quality?organization=${organizationId}&project=${project.id}`}>Quality registers and due work</a></p>
       <dl>{Object.entries(project.metadata).filter(([, value]) => value).map(([key, value]) =>
         <div key={key}><dt>{key === "status" ? "Status" : projectFields[key as keyof typeof projectFields]}</dt><dd>{value}</dd></div>)}</dl>
       {manager && <details><summary>Revise project information</summary><ProjectForm organization={organizationId} project={project} /></details>}
@@ -109,11 +111,24 @@ export default async function ConstructionPage({ searchParams }: {
             <option key={member.id} value={member.id}>{member.name} · {roles[member.role]}</option>)}</select></label>
         </WorkspaceForm>
       </details>}
+      {admin && members.some((member) => member.role !== "administrator") && <details><summary>Revoke project access</summary>
+        <WorkspaceForm task="revoke-project-member" organization={organizationId} project={project.id} submit="Revoke access">
+          <label>Organization member <select name="member" required>{members.filter((member) => member.role !== "administrator").map((member) =>
+            <option key={member.id} value={member.id}>{member.name} · {roles[member.role]}</option>)}</select></label>
+        </WorkspaceForm>
+      </details>}
       <h3>Recent activity</h3>
       <ul>{history.map((entry) => <li key={entry.id}>{activity[entry.action] ?? entry.action} · {entry.name}
         {entry.revision ? ` · Revision ${entry.revision}` : ""} · <time dateTime={entry.created_at.toISOString()}>{entry.created_at.toISOString().slice(0, 10)}</time>
       </li>)}</ul>
     </section>}
+    {admin && members.some((member) => member.id !== account.id) && <section className="live-panel"><details><summary>Disable organization access</summary>
+      <p>This also removes project assignments and invalidates unused invitations for that address.</p>
+      <WorkspaceForm task="disable-member" organization={organizationId} submit="Disable access">
+        <label>Organization member <select name="member" required>{members.filter((member) => member.id !== account.id).map((member) =>
+          <option key={member.id} value={member.id}>{member.name} · {roles[member.role]}</option>)}</select></label>
+      </WorkspaceForm>
+    </details></section>}
     {manager && <section className="live-panel"><details><summary>Create a project</summary><ProjectForm organization={organizationId} /></details></section>}
     {admin && <section className="live-panel"><h2>Invite a team member</h2>
       <WorkspaceForm task="invite-member" organization={organizationId} submit="Create invitation">
@@ -128,6 +143,7 @@ export default async function ConstructionPage({ searchParams }: {
 
 const activity: Record<string,string> = {
   "project.created": "Project created", "project.revised": "Project revised", "project.member_added": "Project access granted",
+  "project.member_removed": "Project access revoked",
   "document.added": "Document added", "document.revised": "Document revised", "document.downloaded": "Document downloaded",
   "document.archived": "Document archived",
   "delivery.received": "Delivery recorded", "inspection.draft": "Inspection saved as draft", "inspection.submitted": "Inspection submitted",

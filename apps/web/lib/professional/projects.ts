@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { mintInvite } from "./accounts.ts";
-import { transact } from "./database.ts";
+import { lockOrganization, transact } from "./database.ts";
 import { email, id, pick, type ProjectMetadata, projectInput, type Role, revision, roles, WorkspaceError } from "./input.ts";
 
 type Queryable = Pool | PoolClient;
@@ -11,7 +11,7 @@ export const managers = ["administrator", "project_manager"] as const;
 
 export async function requireMember(db: Queryable, account: string, organization: string, allowed?: readonly Role[]) {
   const { rows: [member] } = await db.query<{role: Role}>(
-    "SELECT role FROM construction.members WHERE account_id=$1 AND organization_id=$2", [account, organization]);
+    "SELECT role FROM construction.members WHERE account_id=$1 AND organization_id=$2 AND disabled_at IS NULL", [account, organization]);
   if (!member || (allowed && !allowed.includes(member.role))) throw new WorkspaceError("You do not have access to this organization action.");
   return member.role;
 }
@@ -28,7 +28,7 @@ export async function requireProject(db: Queryable, account: string, organizatio
 
 export async function organizationsFor(db: Pool, account: string) {
   const { rows } = await db.query<{id: string; name: string; role: Role}>(`SELECT o.id,o.name,m.role FROM construction.organizations o
-    JOIN construction.members m ON m.organization_id=o.id WHERE m.account_id=$1 ORDER BY o.name,o.id LIMIT 100`, [account]);
+    JOIN construction.members m ON m.organization_id=o.id WHERE m.account_id=$1 AND m.disabled_at IS NULL ORDER BY o.name,o.id LIMIT 100`, [account]);
   return rows;
 }
 
@@ -73,6 +73,7 @@ export async function saveProject(db: Pool, account: string, organization: strin
 
 export async function inviteMember(db: Pool, account: string, organization: string, address: unknown, requestedRole: unknown) {
   return transact(db, async (tx) => {
+    await lockOrganization(tx,organization);
     await requireMember(tx, account, organization, admin);
     const role = pick(requestedRole, Object.keys(roles) as Role[], "organization role");
     const value = await mintInvite(tx, organization, email(address), role, account);
@@ -85,16 +86,46 @@ export async function inviteMember(db: Pool, account: string, organization: stri
 export async function membersFor(db: Pool, account: string, organization: string) {
   await requireMember(db, account, organization, admin);
   return (await db.query<Member>(`SELECT a.id,a.name,a.email,m.role FROM construction.members m
-    JOIN construction.accounts a ON a.id=m.account_id WHERE m.organization_id=$1 ORDER BY a.name,a.id LIMIT 100`, [organization])).rows;
+    JOIN construction.accounts a ON a.id=m.account_id WHERE m.organization_id=$1 AND m.disabled_at IS NULL ORDER BY a.name,a.id LIMIT 100`, [organization])).rows;
 }
 
 export async function addProjectMember(db: Pool, account: string, organization: string, project: string, member: string) {
   return transact(db, async (tx) => {
+    await lockOrganization(tx,organization);
     await requireProject(tx, account, organization, project, admin);
     await requireMember(tx, member, organization);
     const inserted = await tx.query("INSERT INTO construction.project_members VALUES ($1,$2,$3) ON CONFLICT DO NOTHING", [organization, project, member]);
     if (inserted.rowCount) await tx.query(`INSERT INTO construction.audit(organization_id,project_id,actor,entity_id,action)
       VALUES ($1,$2,$3,$4,'project.member_added')`, [organization, project, account, member]);
+  });
+}
+
+export async function revokeProjectMember(db:Pool, account:string, organization:string, project:string, member:string) {
+  return transact(db,async (tx) => {
+    await lockOrganization(tx,organization);
+    await requireProject(tx,account,organization,project,admin);
+    if (await requireMember(tx,member,organization) === "administrator") throw new WorkspaceError("Administrators have organization-wide project access.");
+    const revoked = await tx.query("DELETE FROM construction.project_members WHERE organization_id=$1 AND project_id=$2 AND account_id=$3",
+      [organization,project,member]);
+    if (revoked.rowCount) await tx.query(`INSERT INTO construction.audit(organization_id,project_id,actor,entity_id,action)
+      VALUES ($1,$2,$3,$4,'project.member_removed')`,[organization,project,account,member]);
+  });
+}
+
+export async function disableMember(db:Pool, account:string, organization:string, member:string) {
+  return transact(db,async (tx) => {
+    await lockOrganization(tx,organization);
+    await requireMember(tx,account,organization,admin);
+    if (member === account) throw new WorkspaceError("An administrator cannot disable their own organization access.");
+    const disabled = await tx.query("UPDATE construction.members SET disabled_at=now() WHERE organization_id=$1 AND account_id=$2 AND disabled_at IS NULL",
+      [organization,member]);
+    if (disabled.rowCount) {
+      await tx.query("DELETE FROM construction.project_members WHERE organization_id=$1 AND account_id=$2",[organization,member]);
+      await tx.query(`UPDATE construction.invites i SET consumed_at=now() FROM construction.accounts a
+        WHERE i.organization_id=$1 AND a.id=$2 AND i.email=a.email AND i.consumed_at IS NULL`,[organization,member]);
+      await tx.query(`INSERT INTO construction.audit(organization_id,actor,entity_id,action)
+        VALUES ($1,$2,$3,'membership.disabled')`,[organization,account,member]);
+    }
   });
 }
 

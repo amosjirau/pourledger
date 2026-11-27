@@ -1,0 +1,25 @@
+CREATE TABLE construction.stock_movements (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id uuid NOT NULL,
+  project_id uuid NOT NULL,
+  delivery_id uuid NOT NULL,
+  element_id uuid,
+  reference text NOT NULL,
+  kind text NOT NULL CHECK(kind IN ('allocate','release','installed','returned','waste')),
+  quantity numeric(20,6) NOT NULL CHECK(quantity>0),
+  movement_date date NOT NULL,
+  work_package text NOT NULL,
+  notes text NOT NULL,
+  document_id uuid,
+  document_revision integer,
+  actor uuid NOT NULL,
+  CHECK ((document_id IS NULL)=(document_revision IS NULL)),
+  CHECK ((kind IN ('allocate','release','installed'))=(element_id IS NOT NULL)),
+  CHECK (kind<>'installed' OR document_id IS NOT NULL),
+  UNIQUE(organization_id,project_id,delivery_id,reference),
+  FOREIGN KEY(organization_id,project_id,delivery_id) REFERENCES construction.deliveries(organization_id,project_id,id),
+  FOREIGN KEY(organization_id,project_id,element_id) REFERENCES construction.elements(organization_id,project_id,id),
+  FOREIGN KEY(organization_id,project_id,document_id,document_revision) REFERENCES construction.document_revisions(organization_id,project_id,document_id,revision),
+  FOREIGN KEY(organization_id,actor) REFERENCES construction.members(organization_id,account_id)
+);
+CREATE INDEX ON construction.stock_movements(organization_id,project_id,delivery_id,element_id);

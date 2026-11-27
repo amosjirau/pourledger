@@ -70,6 +70,7 @@ export default async function ReceivingPage({ searchParams }: {
       <h2>{detail.delivery.reference} · {detail.delivery.material}</h2>
       <p>{detail.delivery.supplier} · Delivery note {detail.delivery.delivery_note}, line {detail.delivery.line} · {detail.delivery.delivery_date}</p>
       <p>Received {showQuantity(detail.delivery.quantity)} {detail.delivery.unit}</p>
+      <p><a href={`/construction/receiving/stock?${context}&delivery=${detail.delivery.id}`}>Stock movements and reconciliation</a></p>
       <dl>{Object.entries(detail.delivery.metadata).filter(([, value]) => value).map(([key,value]) =>
         <div key={key}><dt>{deliveryFields[key as keyof typeof deliveryFields]}</dt><dd>{value}</dd></div>)}</dl>
       <h3>Material inspection request</h3>

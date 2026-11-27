@@ -26,3 +26,7 @@ export async function transact<T>(pool: Pool, work: (client: PoolClient) => Prom
     throw error;
   } finally { client.release(); }
 }
+
+export async function lockOrganization(client:PoolClient, organization:string) {
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,6))",[organization]);
+}

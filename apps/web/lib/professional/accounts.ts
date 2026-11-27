@@ -1,7 +1,7 @@
 import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import type { Pool, PoolClient } from "pg";
-import { transact } from "./database.ts";
+import { lockOrganization, transact } from "./database.ts";
 import { email, type Role, text, WorkspaceError } from "./input.ts";
 
 const derive = promisify(scrypt);
@@ -83,6 +83,10 @@ export async function acceptInvite(db: Pool, code: unknown, rawEmail: unknown, r
   if (!isToken(code)) throw new WorkspaceError("The invitation is invalid or expired.");
   await consumeAttempt(db, `invite:${address}`);
   return transact(db, async (tx) => {
+    const { rows: [matched] } = await tx.query<{organization_id:string}>(`SELECT organization_id FROM construction.invites
+      WHERE token_hash=$1 AND email=$2 AND consumed_at IS NULL AND expires_at>now()`,[digest(code),address]);
+    if (!matched) throw new WorkspaceError("The invitation is invalid or expired.");
+    await lockOrganization(tx,matched.organization_id);
     const { rows: [invite] } = await tx.query<{organization_id: string; role: Role}>(`SELECT organization_id,role
       FROM construction.invites WHERE token_hash=$1 AND email=$2 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`, [digest(code), address]);
     if (!invite) throw new WorkspaceError("The invitation is invalid or expired.");
@@ -93,7 +97,8 @@ export async function acceptInvite(db: Pool, code: unknown, rawEmail: unknown, r
     const account = existing ?? (await tx.query<{id: string}>(`INSERT INTO construction.accounts(email,name,password_hash)
       VALUES ($1,$2,$3) RETURNING id`, [address, name, await hashPassword(value)])).rows[0];
     const added = await tx.query(`INSERT INTO construction.members(organization_id,account_id,role) VALUES ($1,$2,$3)
-      ON CONFLICT DO NOTHING`, [invite.organization_id, account.id, invite.role]);
+      ON CONFLICT (organization_id,account_id) DO UPDATE SET role=excluded.role,disabled_at=NULL
+      WHERE construction.members.disabled_at IS NOT NULL`, [invite.organization_id, account.id, invite.role]);
     await tx.query("UPDATE construction.invites SET consumed_at=now() WHERE token_hash=$1", [digest(code)]);
     if (added.rowCount) {
       await tx.query(`INSERT INTO construction.audit(organization_id,actor,entity_id,action,payload)

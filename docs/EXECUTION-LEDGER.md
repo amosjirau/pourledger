@@ -13,11 +13,12 @@
 
 - `46be6ef` introduced private invitation-based accounts and roles, project membership and metadata, versioned documents, a delivery register and a reviewed MIR workflow.
 - The isolated PostgreSQL scenario passed using the limited application role. It covered invitation replay, project revisions, cross-tenant isolation, private file integrity, invalid/duplicate delivery input, unauthorized review, exact decimal reconciliation and concurrent decisions.
-- The follow-up adds project specification and structural element registers and a spreadsheet-safe delivery export. Project applicability criteria remain user-provided and reviewed. No standards text is redistributed.
+- `9776a35` adds project specification and structural element registers and a spreadsheet-safe delivery export. Its Vercel preview completed a desktop workflow with invitation acceptance, a private verified document, and material receiving, plus mobile sign-in, access denial and layout checks.
+- The next increment adds ITP/WIR/NCR, pours, reinforcement and laboratory records, a due queue, a stock ledger, exact stock checks and calculation utilities. The combined PostgreSQL scenario exercises reviewed ITPs, concrete specimen results, authorization and evidence-gated stock movements.
 
 ## Open release gates
 
 - Prove both protected Mainnet passports in desktop and mobile browsers after block 12,198,098. Block 12,198,097 is the last block inside the 50,000-block direct span. The smoke script defaults to the first block outside that span.
-- Intermittent database connection failures were observed in the first Vercel preview. `9922168` bounds handshake and read recovery and logs a sanitized failure category. Confirm it against the protected preview before any stable rollout.
-- Verify the professional preview browser workflow and run fresh backup and restore checks for populated data.
-- Remaining product scope includes ITP and WIR, NCRs, concrete and laboratory workflows, stock movements and allocations, expanded reporting and notifications, account recovery, retention-policy deletion, approved public disclosure, signing abstraction and the complete synthetic project scenario. Extend the implemented workflows with meaningful integration and browser checks before enabling more production surfaces.
+- Intermittent database connection failures were observed in the first Vercel preview. `9922168` bounds handshake and read recovery and logs a sanitized failure category. The hardened protected preview passed all four direct browser checks before the history boundary.
+- The populated index backup restored nine events and a ready checkpoint to a private recovery database. The professional database also has a private custom-format backup.
+- Remaining product scope includes expanded reporting and PDF handover, notification delivery, account recovery and membership revocation, retention-policy deletion, approved public disclosure, close integration with wallet signing and the full synthetic browser scenario across every quality register.
