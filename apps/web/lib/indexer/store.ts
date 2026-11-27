@@ -15,7 +15,7 @@ const pageSize = 16;
 export const indexScope = (target: RegistryTarget) => `${target.chainId}:${target.registry.toLowerCase()}`;
 
 export function indexPool(url: string, max = 4, ssl?: ConnectionOptions) {
-  const pool = new pg.Pool({ connectionString: url, max, connectionTimeoutMillis: 4_000,
+  const pool = new pg.Pool({ connectionString: url, max, connectionTimeoutMillis: ssl ? 8_000 : 4_000,
     idleTimeoutMillis: 15_000, statement_timeout: 12_000, lock_timeout: 4_000, allowExitOnIdle: true, ssl });
   pool.on("error", () => { console.error("Registry index database connection failed."); });
   return pool;

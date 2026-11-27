@@ -67,7 +67,7 @@ async function startTunnel() {
         reject(new Error("Database tunnel closed."));
         if (session === pending) session = undefined;
       });
-      client.connect({ host, port, username, privateKey, readyTimeout: 4_000,
+      client.connect({ host, port, username, privateKey, readyTimeout: 5_500,
         keepaliveInterval: 10_000, keepaliveCountMax: 2, algorithms: { serverHostKey: ["ssh-ed25519"] },
         hostVerifier: (offered: Buffer) => timingSafeEqual(createHash("sha256").update(offered).digest(), expected) });
     });
@@ -91,17 +91,26 @@ async function startTunnel() {
       }
     });
     socket.setTimeout(25_000, () => socket.destroy());
-    void connect().then((client) => {
+    const forward = async () => {
+      const current = connect();
+      const client = await current;
       if (socket.destroyed) return;
-      client.forwardOut("127.0.0.1", socket.remotePort ?? 0, "127.0.0.1", 5432, (error, stream) => {
-        if (error || socket.destroyed) { stream?.destroy(); socket.destroy(); return; }
-        stream.on("error", () => socket.destroy());
-        stream.once("close", () => socket.destroy());
-        socket.once("close", () => stream.destroy());
-        socket.pipe(stream).pipe(socket);
-        socket.resume();
+      const stream = await new Promise<import("ssh2").ClientChannel>((resolve, reject) => {
+        client.forwardOut("127.0.0.1", socket.remotePort ?? 0, "127.0.0.1", 5432,
+          (error, forwarded) => error ? reject(error) : resolve(forwarded));
+      }).catch((error) => {
+        if (session === current) session = undefined;
+        client.destroy();
+        throw error;
       });
-    }).catch(() => socket.destroy());
+      if (socket.destroyed) { stream.destroy(); return; }
+      stream.on("error", () => socket.destroy());
+      stream.once("close", () => socket.destroy());
+      socket.once("close", () => stream.destroy());
+      socket.pipe(stream).pipe(socket);
+      socket.resume();
+    };
+    void forward().catch(() => socket.destroy());
   });
   server.maxConnections = 8;
   server.unref();

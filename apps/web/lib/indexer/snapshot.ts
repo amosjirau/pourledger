@@ -11,7 +11,22 @@ export async function verifiedIndexSnapshot(target: RegistryTarget, firstBlock: 
   if (!indexReadConfigured()) return undefined;
   const db = await indexReadPool();
   const scope = indexScope(target);
-  const readState = () => indexState(db, scope).catch(() => { throw new Error("Registry index is unavailable."); });
+  async function readState() {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await indexState(db, scope);
+      } catch (error) {
+        const raw = error && typeof error === "object" && "code" in error ? String(error.code) : "";
+        const code = /^[A-Z0-9_]{2,35}$/.test(raw) ? raw : "CONNECTION";
+        const recoverable = code === "CONNECTION" || code.startsWith("08") ||
+          ["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EPIPE", "57P01"].includes(code);
+        if (attempt === 0 && recoverable) continue;
+        console.warn("Registry index state query failed.", code);
+        throw new Error("Registry index is unavailable.");
+      }
+    }
+    throw new Error("Registry index is unavailable.");
+  }
   const state = await readState();
   const ageMs = state ? Date.now() - state.checked_at.getTime() : Infinity;
   if (!state || state.first_block !== String(firstBlock) || state.confirmations !== target.confirmations || state.status !== "ready" ||
