@@ -4,7 +4,7 @@ import { currentAccount, sessionCookie } from "../../../../lib/professional/acco
 import { constructionEnabled, constructionPool } from "../../../../lib/professional/database.ts";
 import { designRegister, type Element } from "../../../../lib/professional/design.ts";
 import { listDocuments } from "../../../../lib/professional/documents.ts";
-import { id, WorkspaceError } from "../../../../lib/professional/input.ts";
+import { id, type Role, WorkspaceError } from "../../../../lib/professional/input.ts";
 import { requireMember } from "../../../../lib/professional/projects.ts";
 import { formatQuantity, quantity } from "../../../../lib/professional/quantities.ts";
 import { installers, movementAuthors, movementKinds, stockRegister } from "../../../../lib/professional/stock.ts";
@@ -21,7 +21,8 @@ export default async function StockPage({ searchParams }: {
   const user = await currentAccount(db,(await cookies()).get(sessionCookie)?.value);
   if (!user) redirect("/construction");
   const query = await searchParams;
-  let view;
+  let view: {organization:string;project:string;delivery:string;role:Role;stock:Awaited<ReturnType<typeof stockRegister>>;
+    elements?:Awaited<ReturnType<typeof designRegister>>;documents?:Awaited<ReturnType<typeof listDocuments>>};
   try {
     const organization = id(query.organization), project = id(query.project), delivery = id(query.delivery);
     const stock = await stockRegister(db,user.id,organization,project,delivery,query.after ? id(query.after) : undefined);

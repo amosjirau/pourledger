@@ -23,7 +23,11 @@ export function pick<T extends string>(value: unknown, choices: readonly T[], la
 
 export function text(value: unknown, label: string, limit: number, required = true) {
   const result = typeof value === "string" ? value.trim() : "";
-  if ((required && !result) || result.length > limit || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(result)) {
+  const unsafe = [...result].some((char) => {
+    const code = char.charCodeAt(0);
+    return code === 127 || (code < 32 && ![9,10,13].includes(code));
+  });
+  if ((required && !result) || result.length > limit || unsafe) {
     throw new WorkspaceError(`Enter ${label} using at most ${limit} characters.`);
   }
   return result;

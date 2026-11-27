@@ -3,8 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { currentAccount, sessionCookie } from "../../../lib/professional/accounts.ts";
 import { constructionEnabled, constructionPool } from "../../../lib/professional/database.ts";
 import { listDocuments } from "../../../lib/professional/documents.ts";
-import { id, text, WorkspaceError } from "../../../lib/professional/input.ts";
-import { requireMember, requireProject } from "../../../lib/professional/projects.ts";
+import { id, type Role, text, WorkspaceError } from "../../../lib/professional/input.ts";
+import { type Project, requireMember, requireProject } from "../../../lib/professional/projects.ts";
 import { formatQuantity, quantity, units } from "../../../lib/professional/quantities.ts";
 import { authorRoles, deliveriesFor, deliveryFields, deliveryInspection, type Inspection, inspectionFields, materials, receivingRoles, reviewRoles } from "../../../lib/professional/receiving.ts";
 import { WorkspaceForm } from "../workspace-form.tsx";
@@ -32,7 +32,8 @@ export default async function ReceivingPage({ searchParams }: {
   const account = await currentAccount(db, (await cookies()).get(sessionCookie)?.value);
   if (!account) redirect("/construction");
   const query = await searchParams;
-  let view;
+  let view: {organization:string;project:Project;role:Role;search:string;entries:Awaited<ReturnType<typeof deliveriesFor>>;
+    detail?:Awaited<ReturnType<typeof deliveryInspection>>;documents?:Awaited<ReturnType<typeof listDocuments>>};
   try {
     const organization = id(query.organization);
     const project = await requireProject(db, account.id, organization, id(query.project));
@@ -58,7 +59,7 @@ export default async function ReceivingPage({ searchParams }: {
       <form action="/construction/receiving">
         <input type="hidden" name="organization" value={organization} /><input type="hidden" name="project" value={project.id} />
         <label>Search by reference, supplier or material <input name="search" defaultValue={search} maxLength={120} /></label>
-        <button>Search deliveries</button>
+        <button type="submit">Search deliveries</button>
       </form>
       <p><a href={`/construction/receiving/export?${context}&search=${encodeURIComponent(search)}`}>Download delivery register CSV</a></p>
       {entries.entries.length ? <ul>{entries.entries.map((entry) => <li key={entry.id}>
@@ -71,6 +72,8 @@ export default async function ReceivingPage({ searchParams }: {
       <p>{detail.delivery.supplier} · Delivery note {detail.delivery.delivery_note}, line {detail.delivery.line} · {detail.delivery.delivery_date}</p>
       <p>Received {showQuantity(detail.delivery.quantity)} {detail.delivery.unit}</p>
       <p><a href={`/construction/receiving/stock?${context}&delivery=${detail.delivery.id}`}>Stock movements and reconciliation</a></p>
+      {role === "supplier" && project.chain_project_id && <p>
+        <a href={`/construction/receiving/declaration?${context}&delivery=${detail.delivery.id}`}>Prepare the registry declaration</a></p>}
       <dl>{Object.entries(detail.delivery.metadata).filter(([, value]) => value).map(([key,value]) =>
         <div key={key}><dt>{deliveryFields[key as keyof typeof deliveryFields]}</dt><dd>{value}</dd></div>)}</dl>
       <h3>Material inspection request</h3>
@@ -78,10 +81,20 @@ export default async function ReceivingPage({ searchParams }: {
         <p>{record.reference} · {stateLabel[record.status]} · Revision {record.revision}{record.inspection_date && ` · ${record.inspection_date}`}</p>
         <dl>{Object.entries(record.metadata).filter(([, value]) => value).map(([key,value]) =>
           <div key={key}><dt>{inspectionFields[key as keyof typeof inspectionFields]}</dt><dd>{value}</dd></div>)}</dl>
-        {record.accepted !== null && <p>Accepted {showQuantity(record.accepted)} · Rejected {showQuantity(record.rejected!)} ·{" "}
-          Quarantined {showQuantity(record.quarantined!)} {detail.delivery.unit}</p>}
+        {record.accepted !== null && record.rejected !== null && record.quarantined !== null &&
+          <p>Accepted {showQuantity(record.accepted)} · Rejected {showQuantity(record.rejected)} ·{" "}
+            Quarantined {showQuantity(record.quarantined)} {detail.delivery.unit}</p>}
         {record.evidence_digest && <p className="live-mono">Evidence revision {record.document_revision} · Keccak-256 {record.evidence_digest}</p>}
         <p>Workspace inspection record. Registry attestations are shown in the live registry.</p>
+        {role === "inspector" && record.accepted !== null && record.evidence_digest && project.chain_project_id && <details>
+          <summary>Prepare the registry inspector decision</summary>
+          <form action="/construction/receiving/approval">
+            <input type="hidden" name="organization" value={organization} /><input type="hidden" name="project" value={project.id} />
+            <input type="hidden" name="delivery" value={detail.delivery.id} />
+            <label>Confirmed registry lot ID <input name="lot" required pattern="[1-9][0-9]*" inputMode="numeric" maxLength={78} /></label>
+            <button type="submit">Review registry approval</button>
+          </form>
+        </details>}
       </>}
       {draftable && <WorkspaceForm task="inspection" organization={organization} project={project.id} submit="Save inspection">
         <RevisionInputs delivery={detail.delivery.id} record={record} />

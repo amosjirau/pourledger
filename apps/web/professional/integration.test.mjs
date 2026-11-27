@@ -12,6 +12,8 @@ import { addProjectMember, disableMember, inviteMember, projectsFor, requireProj
 import { quantity, registryQuantity } from "../lib/professional/quantities.ts";
 import { addDelivery, deliveriesFor, deliveryInspection, saveInspection } from "../lib/professional/receiving.ts";
 import { addMovement, stockRegister } from "../lib/professional/stock.ts";
+import { projectReport } from "../lib/professional/report.ts";
+import { bindRegistryApproval, bindRegistryDeclaration } from "../lib/professional/registry-approval.ts";
 
 const url = new URL(process.env.POURLEDGER_CONSTRUCTION_TEST_DATABASE_URL ?? "postgres://invalid.invalid");
 assert.ok(["127.0.0.1", "localhost"].includes(url.hostname) && /_test$/.test(url.pathname), "Use an isolated construction test database.");
@@ -125,6 +127,15 @@ test("synthetic onboarding, tenant isolation, document integrity and reviewed ma
   assert.equal(stock.available,quantity("20"));
   assert.equal(stock.onHand,quantity("40"));
   assert.equal(stock.installed,quantity("40"));
+  assert.throws(() => bindRegistryDeclaration(stock.delivery,"3"),/whole-unit/);
+  const whole = { ...stock.delivery,quantity:"100" };
+  const declaration = bindRegistryDeclaration(whole,"3");
+  const approved = { ...state,accepted:"80",rejected:"20",quarantined:"0" };
+  const canonical = { id:1n,status:1,lotHash:declaration.lotHash,materialType:1,declaredQuantity:100n,unitCode:declaration.unitCode };
+  assert.deepEqual(bindRegistryApproval(whole,approved,canonical,proof.keccak),
+    { lotId:"1",decision:"3",quantity:"80",conditionHash:proof.keccak });
+  assert.throws(() => bindRegistryApproval(whole,approved,{ ...canonical,status:2 },proof.keccak),/terminal/);
+  assert.throws(() => bindRegistryApproval(whole,approved,{ ...canonical,lotHash:proof.keccak },proof.keccak),/delivery reference/);
   const csv = await deliveryCsv(db, auditor.id, org, created.id, "reinforcing");
   assert.match(csv, /"100\.125","kg","MIR-001","partially_accepted","80","10","10\.125"/);
   assert.equal(csvField("  =UNSAFE"), "\"'  =UNSAFE\"");
@@ -160,6 +171,13 @@ test("synthetic onboarding, tenant isolation, document integrity and reviewed ma
   await saveQualityRecord(db,consultant.id,org,created.id,form({ kind:"laboratory",operation:"review",record:sampleId,
     revision:"1",assessment:"Recorded result only. Conformity requires separate evaluation." }));
   assert.equal((await qualityPage(db,owner.id,org,created.id,"laboratory")).entries[0].state,"reviewed");
+  const report = await projectReport(db,auditor.id,org,created.id,"handover","");
+  assert.equal(report.bytes.subarray(0,4).toString(),"%PDF");
+  assert.ok(report.bytes.length > 5_000);
+  await db.query("UPDATE construction.elements SET chain_element_id=1 WHERE id=$1",[element.id]);
+  const withQr = await projectReport(db,auditor.id,org,created.id,"elements","");
+  assert.ok(withQr.bytes.includes(Buffer.from("/element/1")), "The PDF includes the linked canonical passport.");
+  await assert.rejects(projectReport(db,outsider.id,other,created.id,"handover",""),/access/);
   const audit = await db.query("SELECT count(*)::int AS total FROM construction.audit WHERE project_id=$1", [created.id]);
   assert.ok(audit.rows[0].total >= 9);
   await revokeProjectMember(db,owner.id,org,created.id,auditor.id);

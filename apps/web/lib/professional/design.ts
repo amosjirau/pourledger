@@ -30,7 +30,7 @@ function textFields(form: FormData, keys: Record<string,string>, required: reado
 
 export function publisherUrl(value: unknown) {
   const raw = text(value, "the source document URL", 700);
-  let url;
+  let url: URL;
   try { url = new URL(raw); } catch { throw new WorkspaceError("Enter a valid HTTPS source URL."); }
   if (url.protocol !== "https:" || url.username || url.password || !url.hostname.includes(".")) {
     throw new WorkspaceError("Enter a public HTTPS publisher or controlled source URL.");

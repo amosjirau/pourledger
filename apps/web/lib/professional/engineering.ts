@@ -39,7 +39,7 @@ export function siValue(input:number, from:"mm"|"m"|"kg"|"t"|"L"|"m³", to:"mm"|
 
 export function dateAfter(date: string, days: number) {
   if (!Number.isSafeInteger(days) || days < 1 || days > 365) throw new WorkspaceError("Enter a test age between 1 and 365 days.");
-  const value = new Date(date + "T00:00:00Z");
+  const value = new Date(`${date}T00:00:00Z`);
   if (!Number.isFinite(value.getTime())) throw new WorkspaceError("Enter a valid sampling date.");
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);

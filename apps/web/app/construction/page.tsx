@@ -102,6 +102,7 @@ export default async function ConstructionPage({ searchParams }: {
       <p><a href={`/construction/receiving?organization=${organizationId}&project=${project.id}`}>Material deliveries and inspections</a></p>
       <p><a href={`/construction/design?organization=${organizationId}&project=${project.id}`}>Specifications and structural elements</a></p>
       <p><a href={`/construction/quality?organization=${organizationId}&project=${project.id}`}>Quality registers and due work</a></p>
+      <p><a href={`/construction/reports?organization=${organizationId}&project=${project.id}`}>Quality reports and handover</a></p>
       <dl>{Object.entries(project.metadata).filter(([, value]) => value).map(([key, value]) =>
         <div key={key}><dt>{key === "status" ? "Status" : projectFields[key as keyof typeof projectFields]}</dt><dd>{value}</dd></div>)}</dl>
       {manager && <details><summary>Revise project information</summary><ProjectForm organization={organizationId} project={project} /></details>}

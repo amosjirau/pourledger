@@ -28,7 +28,7 @@ export function Calculator() {
     event.preventDefault();
     setAnswer(""); setError("");
     const form = new FormData(event.currentTarget);
-    const num = (i:number) => Number(form.get("value-"+i));
+    const num = (i:number) => Number(form.get(`value-${i}`));
     const fmt = (x:number) => results.format(x);
     try {
       if (tool === "reinforcement") {
@@ -60,7 +60,7 @@ export function Calculator() {
       {tool === "strength" && <label>Specimen shape <select name="shape"><option value="cube">Cube</option><option value="cylinder">Cylinder</option></select></label>}
       {tool === "conversion" && ["from","to"].map((field) => <label key={field}>{field === "from" ? "From" : "To"}
         <select name={field}>{unitList.map((unit) => <option key={unit}>{unit}</option>)}</select></label>)}
-      <button>Calculate</button>
+      <button type="submit">Calculate</button>
     </form>
     {answer && <p role="status">{answer}</p>}{error && <p role="alert">{error}</p>}
   </section>;

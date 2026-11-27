@@ -51,12 +51,14 @@ function rememberWallet(value?: string) {
   }
 }
 
-export function LiveWallet({ target, context }: { target: RegistryTarget; context?: Context }) {
+export function LiveWallet({ target, context, lockedRegistry }: {
+  target: RegistryTarget; context?: Context; lockedRegistry?: { action:"decision"|"register"; read:(account:Address)=>Promise<Record<string,string>> };
+}) {
   const router = useRouter();
   const [wallets, setWallets] = useState<WalletChoice[]>([]);
   const [chosen, setChosen] = useState("");
   const [session, setSession] = useState<Session>();
-  const [action, setAction] = useState<ActionName>("project");
+  const [action, setAction] = useState<ActionName>(lockedRegistry?.action ?? "project");
   const [progress, setProgress] = useState<Progress>();
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState<Pending>();
@@ -205,6 +207,11 @@ export function LiveWallet({ target, context }: { target: RegistryTarget; contex
     try {
       await checkSession();
       if (form) {
+        if (lockedRegistry) {
+          const review = await lockedRegistry.read(account);
+          form = new FormData();
+          for (const [key,value] of Object.entries(review)) form.set(key,value);
+        }
         const code = await reader.getCode({ address: target.registry });
         if (!matchesRegistryImage(code)) throw new Error("The configured address does not match the compiled registry.");
         const separator = await reader.readContract({ address: target.registry, abi: registryAbi, functionName: "domainSeparatorV4" });
@@ -313,11 +320,11 @@ export function LiveWallet({ target, context }: { target: RegistryTarget; contex
       )}
       {session && !mismatch && (
         <>
-          <label>Registry action
+          {!lockedRegistry && <label>Registry action
             <select value={action} onChange={(event) => setAction(event.target.value as ActionName)} disabled={busy}>
               {Object.entries(choices).map(([key, item]) => <option value={key} key={key}>{item.label}</option>)}
             </select>
-          </label>
+          </label>}
           {action === "register" && <p>Registration records a supplier declaration. A designated inspector must decide whether the lot is accepted.</p>}
           {(action === "decision" || action === "assign" || action === "lab") && context && (
             <div className="wallet-queue">
@@ -328,7 +335,7 @@ export function LiveWallet({ target, context }: { target: RegistryTarget; contex
             </div>
           )}
           <form key={`${action}:${context?.project ?? ""}:${session.account}`} onSubmit={submit}>
-            {choices[action].fields.map((field) => <ActionField key={field.name} field={field} account={session.account} context={context} lotIds={queuedLots.map((lot) => lot.id)} />)}
+            {!lockedRegistry && choices[action].fields.map((field) => <ActionField key={field.name} field={field} account={session.account} context={context} lotIds={queuedLots.map((lot) => lot.id)} />)}
             <button type="submit" disabled={busy || !!pending}>{choices[action].label}</button>
           </form>
           {pending && <button type="button" disabled={busy} onClick={() => void run()}>Refresh receipt</button>}

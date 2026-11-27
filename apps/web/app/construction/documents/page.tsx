@@ -3,8 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { currentAccount, sessionCookie } from "../../../lib/professional/accounts.ts";
 import { constructionEnabled, constructionPool } from "../../../lib/professional/database.ts";
 import { documentEditors, documentKinds, listDocumentRevisions, listDocuments } from "../../../lib/professional/documents.ts";
-import { id, revision, WorkspaceError } from "../../../lib/professional/input.ts";
-import { managers, requireMember, requireProject } from "../../../lib/professional/projects.ts";
+import { id, revision, type Role, WorkspaceError } from "../../../lib/professional/input.ts";
+import { managers, type Project, requireMember, requireProject } from "../../../lib/professional/projects.ts";
 import { WorkspaceForm } from "../workspace-form.tsx";
 
 export const dynamic = "force-dynamic";
@@ -20,31 +20,33 @@ export default async function DocumentsPage({ searchParams }: {
   const account = await currentAccount(db, (await cookies()).get(sessionCookie)?.value);
   if (!account) redirect("/construction");
   const query = await searchParams;
-  let view;
+  let view: {organization:string;project:Project;role:Role;documents:Awaited<ReturnType<typeof listDocuments>>;
+    history?:Awaited<ReturnType<typeof listDocumentRevisions>>;document?:string};
   try {
     const organization = id(query.organization);
     const project = await requireProject(db, account.id, organization, id(query.project));
     const role = await requireMember(db, account.id, organization);
     const documents = await listDocuments(db, account.id, organization, project.id, query.after ? id(query.after) : undefined);
-    const history = query.document ? await listDocumentRevisions(db, account.id, organization, project.id, id(query.document),
+    const document = query.document ? id(query.document) : undefined;
+    const history = document ? await listDocumentRevisions(db, account.id, organization, project.id, document,
       query.before ? revision(query.before) : undefined) : undefined;
-    view = { organization, project, role, documents, history };
+    view = { organization, project, role, documents, history, document };
   } catch (error) { if (error instanceof WorkspaceError) notFound(); throw error; }
-  const { organization, project, role, documents, history } = view;
+  const { organization, project, role, documents, history, document } = view;
   const permitted = documentEditors.includes(role);
   const location = `organization=${organization}&project=${project.id}`;
   const link = (document: string, version: number) => `/construction/documents/${document}?${location}&revision=${version}`;
   return <main className="live-shell">
     <a href={`/construction?${location}`}>{project.code} · {project.name}</a>
     <h1>Project documents</h1>
-    {history && <section className="live-panel">
+    {history && document && <section className="live-panel">
       <h2>Revision history</h2>
       {history.entries.length === 0 && <p>No revisions are visible for this reference.</p>}
       <ul>{history.entries.map((entry) => <li key={entry.revision}>
-        <a href={link(query.document!, entry.revision)}>Revision {entry.revision} · {entry.file_name}</a>
+        <a href={link(document, entry.revision)}>Revision {entry.revision} · {entry.file_name}</a>
         <p className="live-mono">SHA-256 {entry.sha256}</p>
       </li>)}</ul>
-      {history.more && <a href={`/construction/documents?${location}&document=${query.document}&before=${history.more}`}>Older revisions</a>}
+      {history.more && <a href={`/construction/documents?${location}&document=${document}&before=${history.more}`}>Older revisions</a>}
     </section>}
     <section className="live-panel">
       <h2>Document register</h2>

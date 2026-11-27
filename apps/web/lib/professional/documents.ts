@@ -31,7 +31,8 @@ export async function documentBytes(file: unknown) {
   }
   const type = pick(file.type, Object.keys(signatures) as MediaType[], "file type");
   const name = text(file.name.replace(/[\\/]/g, "_"), "a file name", 160);
-  if (!/^[^\r\n\u0000-\u001f]+$/u.test(name) || !({ "application/pdf": /\.pdf$/i, "image/jpeg": /\.jpe?g$/i, "image/png": /\.png$/i })[type].test(name)) {
+  if ([...name].some((char) => char.charCodeAt(0) < 32) ||
+    !({ "application/pdf": /\.pdf$/i, "image/jpeg": /\.jpe?g$/i, "image/png": /\.png$/i })[type].test(name)) {
     throw new WorkspaceError("The file extension must match the selected file type.");
   }
   const bytes = Buffer.from(await file.arrayBuffer());

@@ -83,12 +83,25 @@ try {
   await page.getByRole("link",{name:"Concrete pours",exact:true}).click();
   await page.getByRole("heading",{name:"Concrete pours",exact:true}).waitFor();
   await page.getByRole("link",{name:"SYN-BROWSER · Synthetic construction works",exact:true}).click();
+  await page.getByRole("link",{name:"Quality reports and handover",exact:true}).click();
+  await page.locator('select[name="report"]').selectOption("handover");
+  const report = await page.evaluate(async () => {
+    const form = document.querySelector('form[action="/construction/reports/download"]');
+    const url = new URL(form.action);
+    for (const [name,value] of new FormData(form)) url.searchParams.set(name,String(value));
+    const response = await fetch(url);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return { status:response.status, type:response.headers.get("content-type"),
+      magic:new TextDecoder().decode(bytes.slice(0,4)) };
+  });
+  assert.deepEqual(report,{ status:200,type:"application/pdf",magic:"%PDF" });
+  await page.getByRole("link",{name:"SYN-BROWSER · Synthetic construction works",exact:true}).click();
   await page.getByRole("link",{name:"Engineering calculations",exact:true}).click();
   await page.locator("select").first().selectOption("concrete");
   for (const [index,value] of ["2","3","0.25","2"].entries()) await page.locator(`input[name="value-${index}"]`).fill(value);
   await page.getByRole("button",{name:"Calculate",exact:true}).click();
   await page.getByRole("status").filter({hasText:"3 m³"}).waitFor();
-  console.log("Desktop: quality register navigation and exact rectangular volume calculation.");
+  console.log("Desktop: quality register navigation, authenticated PDF download and exact rectangular volume calculation.");
 
   const mobile = await context(devices["Pixel 7"]);
   const phone = await mobile.newPage();

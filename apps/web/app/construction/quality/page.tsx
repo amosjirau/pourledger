@@ -2,8 +2,8 @@ import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { currentAccount, sessionCookie } from "../../../lib/professional/accounts.ts";
 import { constructionEnabled, constructionPool } from "../../../lib/professional/database.ts";
-import { id, WorkspaceError } from "../../../lib/professional/input.ts";
-import { requireMember, requireProject } from "../../../lib/professional/projects.ts";
+import { id, type Role, WorkspaceError } from "../../../lib/professional/input.ts";
+import { type Project, requireMember, requireProject } from "../../../lib/professional/projects.ts";
 import { canReviewQuality, itpActivities, qualityDefinitions, qualityKind, type QualityKind,
   qualityPage, type QualityRecord } from "../../../lib/professional/quality-records.ts";
 import { WorkspaceForm } from "../workspace-form.tsx";
@@ -22,6 +22,7 @@ function QualityForm({ organization,project,kind,options,record }: {
   organization:string;project:string;kind:QualityKind;options:Selection;record?:QualityRecord;
 }) {
   const definition = qualityDefinitions[kind];
+  const fieldId = (name:string) => `${kind}-${record?.id ?? "new"}-${name}`;
   const selected:Record<string,string|null|undefined> = { element:record?.element_id,delivery:record?.delivery_id,
     specification:record?.specification_id,related:record?.related_id,document:record?.document_id ? `${record.document_id}:${record.document_revision}` : null };
   return <WorkspaceForm task="quality" organization={organization} project={project} submit="Save quality record">
@@ -29,10 +30,10 @@ function QualityForm({ organization,project,kind,options,record }: {
     {record ? <><input type="hidden" name="record" value={record.id} /><input type="hidden" name="revision" value={record.revision} /></>
       : <label>Record reference <input name="reference" maxLength={60} required /></label>}
     <label>Title <input name="title" maxLength={160} defaultValue={record?.title} required /></label>
-    {definition.fields.map(([name,label,fieldType]) => <label key={name}>{label}
-      {fieldOptions[name] ? <select name={name} defaultValue={record?.fields[name] ?? ""}><option value="">Select a value</option>
+    {definition.fields.map(([name,label,fieldType]) => <label key={name} htmlFor={fieldId(name)}>{label}
+      {fieldOptions[name] ? <select id={fieldId(name)} name={name} defaultValue={record?.fields[name] ?? ""}><option value="">Select a value</option>
         {fieldOptions[name].map((value) => <option key={value}>{value}</option>)}</select>
-        : <input name={name} type={fieldType === "date" ? "date" : "text"}
+        : <input id={fieldId(name)} name={name} type={fieldType === "date" ? "date" : "text"}
           inputMode={fieldType === "decimal" ? "decimal" : fieldType === "whole" ? "numeric" : undefined}
           maxLength={900} defaultValue={record?.fields[name]} />}
     </label>)}
@@ -60,7 +61,7 @@ export default async function QualityPage({ searchParams }: {
   const account = await currentAccount(db,(await cookies()).get(sessionCookie)?.value);
   if (!account) redirect("/construction");
   const query = await searchParams;
-  let view;
+  let view: {organization:string;project:Project;role:Role;kind:QualityKind;result:Awaited<ReturnType<typeof qualityPage>>};
   try {
     const organization = id(query.organization);
     const project = await requireProject(db,account.id,organization,id(query.project));

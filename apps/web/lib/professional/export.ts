@@ -6,8 +6,9 @@ import { formatQuantity, quantity } from "./quantities.ts";
 export function csvField(value: unknown) {
   const raw = value === null || value === undefined ? "" : String(value);
   // Prevent spreadsheet formula evaluation after a file is opened by a recipient.
-  const safe = /^[\s\u0000-\u001f]*[=+@-]/.test(raw) ? "'" + raw : raw;
-  return '"' + safe.replaceAll('"', '""') + '"';
+  const first = [...raw].find((char) => char.charCodeAt(0) >= 32 && char.trim());
+  const safe = first && "=+@-".includes(first) ? `'${raw}` : raw;
+  return `"${safe.replaceAll('"','""')}"`;
 }
 
 export async function deliveryCsv(db: Pool, actor: string, organization: string, projectId: string, search: string) {
@@ -28,5 +29,5 @@ export async function deliveryCsv(db: Pool, actor: string, organization: string,
   const lines = [columns, ...rows.map((row) => [project.code, project.revision, row.reference, row.delivery_date, row.material, row.metadata.description,
     row.supplier, row.metadata.manufacturer, row.delivery_note, row.line, row.metadata.purchaseOrder, row.metadata.batch, row.metadata.grade,
     decimal(row.quantity), row.unit, row.mir, row.status, decimal(row.accepted), decimal(row.rejected), decimal(row.quarantined)])];
-  return "\uFEFF" + lines.map((line) => line.map(csvField).join(",")).join("\r\n") + "\r\n";
+  return `\uFEFF${lines.map((line) => line.map(csvField).join(",")).join("\r\n")}\r\n`;
 }

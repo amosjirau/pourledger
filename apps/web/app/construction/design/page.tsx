@@ -6,8 +6,8 @@ import { currentAccount, sessionCookie } from "../../../lib/professional/account
 import { constructionEnabled, constructionPool } from "../../../lib/professional/database.ts";
 import { designAuthors, designRegister, designReviewers, type Element, elementFields, elementKinds, elementStates,
   type Specification, specificationClasses, specificationFields } from "../../../lib/professional/design.ts";
-import { id, WorkspaceError } from "../../../lib/professional/input.ts";
-import { requireMember, requireProject } from "../../../lib/professional/projects.ts";
+import { id, type Role, WorkspaceError } from "../../../lib/professional/input.ts";
+import { type Project, requireMember, requireProject } from "../../../lib/professional/projects.ts";
 import { elementStock } from "../../../lib/professional/stock.ts";
 import { formatQuantity, quantity } from "../../../lib/professional/quantities.ts";
 import { WorkspaceForm } from "../workspace-form.tsx";
@@ -36,7 +36,8 @@ export default async function DesignPage({ searchParams }: {
   if (!account) redirect("/construction");
   const query = await searchParams;
   const register = query.register === "elements" ? "elements" : "specifications";
-  let view;
+  let view: {organization:string;project:Project;role:Role;list:Awaited<ReturnType<typeof designRegister>>;
+    traced?:Awaited<ReturnType<typeof elementStock>>};
   try {
     const organization = id(query.organization);
     const project = await requireProject(db, account.id, organization, id(query.project));
