@@ -1,4 +1,3 @@
-import { QualityTools } from "../../components/QualityTools";
 import { LiveWallet } from "../../components/LiveWallet";
 import { ProjectWorkspace } from "../../components/ProjectWorkspace";
 import { deployment } from "../../lib/deployment.ts";
@@ -64,7 +63,6 @@ export default async function LivePage({ searchParams }: {
           {view ? <ProjectWorkspace target={target} view={view} pages={params} /> : (
             <section className="live-panel"><h2>Projects unavailable</h2><p role="status">{readError}</p><a href="/live">Retry projects</a></section>
           )}
-          {context && <QualityTools key={context.project} chainId={target.chainId} registry={target.registry} project={context.project} lots={context.lots.filter((lot) => lot.status === 1)} />}
           <form className="live-panel passport-lookup" action="/passport">
         <h2>Find a public passport</h2>
         <input type="hidden" name="chain" value={target.chainId} />

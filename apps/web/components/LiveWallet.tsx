@@ -294,7 +294,6 @@ export function LiveWallet({ target, context }: { target: RegistryTarget; contex
   return (
     <section className="live-panel" aria-label="Wallet and registry transactions">
       <h2>Wallet and registry transactions</h2>
-      <p className="live-note">Use your authorized digital signing wallet to approve records. Reading passports and preparing inspection evidence do not require signing.</p>
       {session ? (
         <>
           <div className="workspace-registry"><span>Wallet chain {session.chainId}</span><code>{session.account}</code></div>
