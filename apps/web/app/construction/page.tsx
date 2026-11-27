@@ -99,6 +99,7 @@ export default async function ConstructionPage({ searchParams }: {
       {project.chain_project_id && <p>QIE project reference {project.chain_project_id}</p>}
       <p><a href={`/construction/documents?organization=${organizationId}&project=${project.id}`}>Project documents</a></p>
       <p><a href={`/construction/receiving?organization=${organizationId}&project=${project.id}`}>Material deliveries and inspections</a></p>
+      <p><a href={`/construction/design?organization=${organizationId}&project=${project.id}`}>Specifications and structural elements</a></p>
       <dl>{Object.entries(project.metadata).filter(([, value]) => value).map(([key, value]) =>
         <div key={key}><dt>{key === "status" ? "Status" : projectFields[key as keyof typeof projectFields]}</dt><dd>{value}</dd></div>)}</dl>
       {manager && <details><summary>Revise project information</summary><ProjectForm organization={organizationId} project={project} /></details>}
@@ -133,4 +134,7 @@ const activity: Record<string,string> = {
   "inspection.under_review": "Inspection review started", "inspection.revision_required": "Inspection revision requested",
   "inspection.accepted": "Inspection accepted", "inspection.partially_accepted": "Inspection partially accepted",
   "inspection.rejected": "Inspection rejected",
+  "specification.draft": "Specification revision filed", "specification.approved": "Specification revision approved",
+  "specification.withdrawn": "Specification revision withdrawn", "element.created": "Structural element registered",
+  "element.revised": "Structural element revised",
 };

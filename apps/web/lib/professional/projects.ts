@@ -47,8 +47,15 @@ export async function saveProject(db: Pool, account: string, organization: strin
   const project = form.get("project") ? id(form.get("project")) : null;
   return transact(db, async (tx) => {
     const fields = [organization, input.code, input.name, input.chainProjectId, input.metadata];
-    if (project) await requireProject(tx, account, organization, project, managers);
-    else await requireMember(tx, account, organization, managers);
+    if (project) {
+      const previous = await requireProject(tx, account, organization, project, managers);
+      await tx.query("SELECT id FROM construction.projects WHERE organization_id=$1 AND id=$2 FOR UPDATE", [organization, project]);
+      if (previous.chain_project_id !== input.chainProjectId) {
+        const existing = await tx.query("SELECT 1 FROM construction.elements WHERE organization_id=$1 AND project_id=$2 AND chain_element_id IS NOT NULL LIMIT 1",
+          [organization, project]);
+        if (existing.rowCount) throw new WorkspaceError("Unlink the verified structural elements before changing the project's registry reference.");
+      }
+    } else await requireMember(tx, account, organization, managers);
     const { rows: [record] } = project
       ? await tx.query<{id: string; revision: number}>(`UPDATE construction.projects SET code=$2,name=$3,chain_project_id=$4,metadata=$5,revision=revision+1
         WHERE organization_id=$1 AND id=$6 AND revision=$7 RETURNING id,revision`, [...fields, project, revision(form.get("revision"))])

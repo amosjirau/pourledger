@@ -60,6 +60,7 @@ export default async function ReceivingPage({ searchParams }: {
         <label>Search by reference, supplier or material <input name="search" defaultValue={search} maxLength={120} /></label>
         <button>Search deliveries</button>
       </form>
+      <p><a href={`/construction/receiving/export?${context}&search=${encodeURIComponent(search)}`}>Download delivery register CSV</a></p>
       {entries.entries.length ? <ul>{entries.entries.map((entry) => <li key={entry.id}>
         <a href={`${base}&delivery=${entry.id}`}>{entry.reference} · {entry.material}</a> · {showQuantity(entry.quantity)} {entry.unit}</li>)}</ul>
         : <p>No deliveries match this view.</p>}

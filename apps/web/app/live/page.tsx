@@ -6,6 +6,7 @@ import { integer, networks, unitLabel } from "../../lib/chain.ts";
 import { parseEventCursor } from "../../lib/indexer/events.ts";
 import { loadProjects, type ProjectsView } from "../../lib/projects.ts";
 import { PassportUnavailable } from "../../lib/passport.ts";
+import { constructionEnabled } from "../../lib/professional/database.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,7 @@ export default async function LivePage({ searchParams }: {
       <nav className="workspace-nav" aria-label="PourLedger">
         <a href="/">PourLedger</a>
         <a href="/">Synthetic demo</a>
+        {constructionEnabled() && <a href="/construction">Construction workspace</a>}
       </nav>
       <header className="workspace-header">
         <div>

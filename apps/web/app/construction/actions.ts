@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { acceptInvite, currentAccount, sessionCookie, signIn, signOut } from "../../lib/professional/accounts.ts";
 import { constructionPool } from "../../lib/professional/database.ts";
+import { reviewSpecification, saveElement, saveSpecification } from "../../lib/professional/design.ts";
 import { archiveDocument, saveDocument } from "../../lib/professional/documents.ts";
 import { id, WorkspaceError } from "../../lib/professional/input.ts";
 import { addProjectMember, inviteMember, saveProject } from "../../lib/professional/projects.ts";
@@ -65,6 +66,13 @@ export async function submitWorkspace(_result: FormResult, form: FormData): Prom
           revalidatePath("/construction/receiving");
           return { notice: "Inspection record saved." };
         }
+      } else if (task === "specification" || task === "review-specification" || task === "element") {
+        const project = id(form.get("project"));
+        if (task === "specification") await saveSpecification(db, account.id, organization, project, form);
+        else if (task === "element") await saveElement(db, account.id, organization, project, form);
+        else await reviewSpecification(db, account.id, organization, project, id(form.get("specification")), form);
+        revalidatePath("/construction/design");
+        return { notice: "Record saved." };
       } else {
         throw new WorkspaceError("Choose a valid action.");
       }

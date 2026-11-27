@@ -4,6 +4,8 @@ import test from "node:test";
 import { indexPool } from "../lib/indexer/store.ts";
 import { acceptInvite, currentAccount, mintInvite, signIn, signOut } from "../lib/professional/accounts.ts";
 import { downloadDocument, listDocumentRevisions, saveDocument } from "../lib/professional/documents.ts";
+import { designRegister, reviewSpecification, saveElement, saveSpecification } from "../lib/professional/design.ts";
+import { csvField, deliveryCsv } from "../lib/professional/export.ts";
 import { addProjectMember, inviteMember, projectsFor, requireProject, saveProject } from "../lib/professional/projects.ts";
 import { quantity, registryQuantity } from "../lib/professional/quantities.ts";
 import { addDelivery, deliveriesFor, deliveryInspection, saveInspection } from "../lib/professional/receiving.ts";
@@ -34,6 +36,7 @@ test("synthetic onboarding, tenant isolation, document integrity and reviewed ma
   const outsider = await invite(other, "administrator", "other");
   const inspector = await invite(org, "inspector", "inspector", owner.id);
   const auditor = await invite(org, "auditor", "auditor", owner.id);
+  const consultant = await invite(org, "consultant", "consultant", owner.id);
   await assert.rejects(signIn(db, owner.email, "incorrect password"), /incorrect/);
   const login = await signIn(db, owner.email, password);
   assert.equal((await currentAccount(db, login.value)).id, owner.id);
@@ -48,10 +51,24 @@ test("synthetic onboarding, tenant isolation, document integrity and reviewed ma
   await assert.rejects(requireProject(db, outsider.id, other, created.id), /access/);
   await addProjectMember(db, owner.id, org, created.id, inspector.id);
   await addProjectMember(db, owner.id, org, created.id, auditor.id);
+  await addProjectMember(db, owner.id, org, created.id, consultant.id);
   assert.equal((await projectsFor(db, inspector.id, org)).entries.length, 1);
   const updated = await saveProject(db, owner.id, org, form({ ...project, project: created.id, revision: "1", description: "Synthetic data only" }));
   assert.equal(updated.revision, 2);
   await assert.rejects(saveProject(db, owner.id, org, form({ ...project, project: created.id, revision: "1" })), /changed/);
+
+  const specification = { reference:"SYN-SPEC", edition:"Test edition", project_revision:"R1", title:"Synthetic reinforcement specification",
+    classification:"contract specification", publisher:"https://example.invalid/synthetic-document", criteria:"Synthetic test criteria",
+    authority:"Project consultant", applicability:"Only the synthetic test project" };
+  const spec = await saveSpecification(db, owner.id, org, created.id, form(specification));
+  await assert.rejects(saveSpecification(db, owner.id, org, created.id, form({ ...specification, publisher:"file:///etc/passwd" })), /HTTPS/);
+  const review = form({ decision:"approved", basis:"Confirmed the synthetic test scope." });
+  await assert.rejects(reviewSpecification(db, inspector.id, org, created.id, spec.id, review), /access/);
+  await reviewSpecification(db, consultant.id, org, created.id, spec.id, review);
+  assert.equal((await designRegister(db, auditor.id, org, created.id, "specifications")).entries[0].state, "approved");
+  const element = await saveElement(db, owner.id, org, created.id, form({ reference:"C3", kind:"Column", status:"planned", drawing:"S-01", revision:"P1" }));
+  assert.equal((await designRegister(db, auditor.id, org, created.id, "elements")).entries[0].id, element.id);
+  await assert.rejects(designRegister(db, outsider.id, org, created.id, "elements"), /access/);
 
   const docForm = { reference: "CERT-001", kind: "mill-certificate", title: "Synthetic mill certificate" };
   const doc = await saveDocument(db, owner.id, org, created.id,
@@ -92,6 +109,10 @@ test("synthetic onboarding, tenant isolation, document integrity and reviewed ma
   assert.equal(state.evidence_digest, proof.keccak);
   assert.equal(state.accepted, "80.000000");
   assert.equal(state.quarantined, "10.125000");
+  const csv = await deliveryCsv(db, auditor.id, org, created.id, "reinforcing");
+  assert.match(csv, /"100\.125","kg","MIR-001","partially_accepted","80","10","10\.125"/);
+  assert.equal(csvField("  =UNSAFE"), "\"'  =UNSAFE\"");
+  await assert.rejects(deliveryCsv(db, outsider.id, other, created.id, ""), /access/);
   const audit = await db.query("SELECT count(*)::int AS total FROM construction.audit WHERE project_id=$1", [created.id]);
   assert.ok(audit.rows[0].total >= 9);
 });
